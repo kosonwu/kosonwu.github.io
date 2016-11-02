@@ -1,7 +1,5 @@
 ---
-title: "index"
-author: "kosonWu"
-date: "2016年11月2日"
+title: "KosonWu @ Github"
 output: html_document
 ---
 
