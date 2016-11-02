@@ -1,0 +1,21 @@
+---
+title: "KosonWu @ Github"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### About
+
+Welcome to practice in R, the personal website for Koson Wu. I am a beginner, and interesting in aspects of data science. 
+
+This is the start of my own journey learning R.
+
+![](image/me.jpg)
+
+
