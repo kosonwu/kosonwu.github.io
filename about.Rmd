@@ -3,7 +3,7 @@ title: "KosonWu @ Github"
 output: 
   html_document:
     highlight: "pygments"
-    theme: "sandstone"
+    theme: "sandstone" 
 ---
 
 ```{r setup, include=FALSE}

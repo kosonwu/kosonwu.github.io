@@ -10,6 +10,11 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-### RECENT
+***
 
-### PREVIOUS
+> __RECENT__
+
+* [create a website through RStudio](R/createWebsite.html) --- 利用 RStudio 新建一個網站 in Github. 
+( *2016-11-03* )
+
+> __PREVIOUS__
