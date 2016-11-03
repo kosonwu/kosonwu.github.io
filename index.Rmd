@@ -14,7 +14,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [create a website through RStudio](R/createWebsite.html) --- 利用 RStudio 新建一個網站 in Github. 
+* [create a website through RStudio](./createWebsite.html) --- 
+利用 RStudio 進行 Git 版本控管、R Markdown 產出 HTML 網頁至 Github. 
 ( *2016-11-03* )
 
 > __PREVIOUS__
