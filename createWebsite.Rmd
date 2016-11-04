@@ -15,6 +15,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ***
 
+    library(rmarkdown)
+    library(knitr)
+    
+    rmarkdown：整合 markup language 與 R ， 生成各式 report outputs.
+    knitr：rmarkdown 的基礎.
+
+***
+
 1. 下載安裝 [Git](https://git-scm.com/downloads)，在 RStudio > Tools > Global Options 設定 Git/SVN.
 
     ![](image/gitSetup.jpg)
@@ -75,8 +83,8 @@ knitr::opts_chunk$set(echo = TRUE)
     
 ***
 
-* ### Lesson learn:
+* ### Lessons Learned:
     + #### Create a website.
     + #### Git version control.
-    + #### R Markdown output format.
+    + #### R Markdown output format. (PDF中文格式需額外處理)
 
