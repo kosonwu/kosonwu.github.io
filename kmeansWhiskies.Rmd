@@ -153,6 +153,7 @@ colnames(groups.mean) <- c("Group", "Taste", "Score")
 # plot
 ggplot(groups.mean, aes(x=Taste, y=Score, fill=factor(Group))) +
   geom_bar(stat = "identity", position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45)) +
   labs(title = "Whisky Flavor Mean Score By Groups")
 ```
 
