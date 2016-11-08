@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [k-means cluster analysis of scotch whiskies](./kmeansWhiskies.html) --- 
+Extract 網頁資訊、利用 K-means 分群法對 Scotch Whiskies 進行分群、以 Google Map 展現. 
+( *2016-11-08* )
+
 * [create a website through RStudio](./createWebsite.html) --- 
 利用 RStudio 進行 Git 版本控管、R Markdown 產出 HTML 網頁至 Github. 
 ( *2016-11-03* )

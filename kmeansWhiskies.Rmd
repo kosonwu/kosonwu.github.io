@@ -1,0 +1,194 @@
+---
+title: ''
+date: "2016-11-08"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(RCurl)
+library(XML)
+library(corrplot)
+library(NbClust)
+library(tidyr)
+library(ggplot2)
+library(ggmap)
+whisky.all <- read.csv(file.path("data", "whisky.csv"), stringsAsFactors = F)
+```
+
+* ### k-means cluster analysis of scotch whiskies
+
+***
+
+    library(RCurl)
+    library(XML)
+    library(corrplot)
+    library(NbClust)
+    library(tidyr)
+    library(ggplot2)
+    library(ggmap)
+    
+    RCurl & XML：擷取 URL 網頁資料及解析 XML / HTML.
+    corrplot：相關矩陣可視化.
+    NbClust：決定最佳群集數.
+    tidyr：資料整理工具.
+    ggplot2 & ggmap：繪圖及空間可視化.
+
+***
+
+學習是一條漫長的過程， [How to get good at R](http://www.kdnuggets.com/2016/11/data-science-101-good-at-r.html) 給了2點建議： 挑選感興趣的主題、建立學習 blog，我想 Learning by doing 的確很重要，但要落實真的需要決心，雖然不容易但總得跨出第一步。想起先前在網路上看到的 whisky 資料集...於是，這個主題便誕生了，希望能成為學習的助燃劑，順便幫忙回顧整理一下這些日子所見所學。使用的資料集來自  https://www.mathstat.strath.ac.uk/outreach/nessie/nessie_whisky.html 
+
+原始資料共86筆，17個變數欄位，包括流水編號(RowID)、蒸餾廠名稱(Distillery)、威士忌風味(3至14欄:Body, Sweetness, Smoky, Medicinal, Tobacco, Honey, Spicy, Winey, Nutty, Malty, Fruity, Floral)、郵遞區號(Postcode)、緯度(Latitude)及經度(Longitude)。不過由於原始資料中 Latitude 與 Longitude 為圖檔座標值並非經緯度，於是利用 Postcode 欄位及 RCurl, XML 套件，配合 http://postal-code.org/postalcode/GB/ 提供的服務，取得網頁資料進行 xpath 解析。   
+
+```{r eval=FALSE}
+# use Postcode to get Latitude, Longitude
+url <- paste0("http://postal-code.org/postalcode/GB/", p)
+html <- htmlParse(getURL(url))
+postal <- xpathSApply(html, "//div[@class='Postal_Code_HTML_Block_Text']", xmlValue)
+
+```
+
+***
+
+以上多數 Distillery 的經緯度可透過郵遞區號來得到，剩下約10來筆對應不到的 ，考量原始資料不多(只有86筆)的情形下，不宜直接刪除，輔以人工進行處理。透過 https://en.wikipedia.org/wiki/List_of_whisky_distilleries_in_Scotland 可查到相關 Distillery 的經緯度...待補齊剩下的資料，確認 identical 資料順序無誤後，整併成 whisky.all 資料框架，匯出儲存方便後續使用。whisky.all 資料結構及前5筆資料顯示如下...
+
+```{r echo=FALSE}
+str(whisky.all)
+head(whisky.all, 5)
+```
+
+***
+
+威士忌風味(3至14欄)相關矩陣探討，使用的是 corrplot 套件，我覺得這套件的可視化比 ellipse 套件來的易懂。下圖藍色代表正相關、紅色為負相關，方塊大小表示其相關程度，圖中顯示 Smoky 與 Medicinal 正相關程度最高，Smoky 與 Body 也很高。而 Floral 與 Medicinal, Body, Smoky 則明顯的負相關，Sweetness 與 Smoky, Medicinal 負相關程度也是很高，Honey 與 Medicinal 也是。這個結果與我對 whisky 的基本認知似乎滿一致的，顯示資料集具有一定的參考性... 
+
+```{r}
+# correlation
+whisky.cor <- cor(whisky.all[,3:14])
+whisky.cor <- round(whisky.cor, digits=3)
+# plot
+corrplot(whisky.cor, method='square', tl.cex = 0.9)
+```
+
+***
+
+接著，探討86筆資料中威士忌風味(3至14欄)的群集關係，使用的是 k-means 分群法，由於尚未知道適宜的群數(k)，因此預先設定2至15群分別執行，為避免一次性的偏差、確保較理想的分群結果，每次程序重複執行20次，記錄每次分群的 Sum Of Squares 結果於 k.performance。之後利用 ggplot2 套件，繪成 Sum Of Squares By Cluster 圖表，由下圖可發現，當資料分成2群和3群時(k = 2 和 k = 3)，Sum Of Squares 明顯下降最多，k = 3 和 k =4 的降幅也相較於其他多一些，因次初步判定適宜的群數(k)可定為3或4...
+
+```{r eval=FALSE}
+# k.performance
+k.performance <- data.frame()
+set.seed(777)
+for (k in 2:15) {
+  k.clusters <- kmeans(whisky.all[, 3:14], k, nstart = 20)
+  sum.squares <- sum(k.clusters$withinss)
+  k.performance <-
+    rbind(k.performance,
+          data.frame(
+            K = k,
+            SumSquares = sum.squares,
+            stringsAsFactors = F
+          ))
+}
+```
+
+```{r echo=FALSE}
+# k.performance
+k.performance <- data.frame()
+set.seed(777)
+for (k in 2:15) {
+  k.clusters <- kmeans(whisky.all[, 3:14], k, nstart = 20)
+  sum.squares <- sum(k.clusters$withinss)
+  k.performance <-
+    rbind(k.performance,
+          data.frame(
+            K = k,
+            SumSquares = sum.squares,
+            stringsAsFactors = F
+          ))
+}
+# plot
+ggplot(k.performance, aes(x=K, y=SumSquares)) +
+  geom_line() +
+  geom_point(size=3, colour="blue") +
+  scale_x_continuous(breaks = k.performance$K) + 
+  labs(title = "Sum Of Squares By Cluster")
+```
+
+***
+
+除了人工的判定，最佳群數的決定也可以利用 NbClust 套件來輔助，透過執行圖表發現 k 由2至3時，相關指數值上升/下降最多，執行的結果當 k =3 時最佳。最終，86筆資料分成3群，群集1有50筆資料、群集2有25筆、群集3有11筆，每群的群心值如下表，透過 ggplot2 套件繪成 Whisky Flavor Mean Score By Groups 圖表，從圖中可發現群集1屬於酒體(Body)偏低、柔和的花果香調性，群集2則酒體偏強、具有明顯麥芽、堅果、蜂蜜、葡萄...等味道，群集3屬於較不香甜但有強烈酒體、濃濃煙燻藥水等特性...(腦海直覺 it's Islay)
+
+```{r eval=FALSE}
+# best clusters
+set.seed(777)
+best.cluster <- NbClust(whisky.all[,3:14], method = "kmeans")
+# add Groups
+Groups <- best.cluster$Best.partition
+attributes(Groups) <- NULL
+table(Groups)
+whisky.all$Groups <- as.factor(Groups)
+# groups' mean
+groups.mean <- aggregate(whisky.all[,3:14], list(whisky.all$Groups), mean)
+groups.mean <- gather(groups.mean,"Taste","Score",2:13)
+colnames(groups.mean) <- c("Group", "Taste", "Score")
+```
+
+```{r echo=FALSE}
+# best clusters
+set.seed(777)
+best.cluster <- NbClust(whisky.all[,3:14], method = "kmeans")
+# add Groups
+Groups <- best.cluster$Best.partition
+attributes(Groups) <- NULL
+table(Groups)
+whisky.all$Groups <- as.factor(Groups)
+# groups' mean
+groups.mean <- aggregate(whisky.all[,3:14], list(whisky.all$Groups), mean)
+groups.mean <- gather(groups.mean,"Taste","Score",2:13)
+colnames(groups.mean) <- c("Group", "Taste", "Score")
+
+# plot
+ggplot(groups.mean, aes(x=Taste, y=Score, fill=factor(Group))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Whisky Flavor Mean Score By Groups")
+```
+
+***
+
+接下來，利用每一筆資料所屬的群集及 Distillery 經緯度繪出分佈地圖。使用 ggplot2 及 ggmap 套件，先定位地圖中心、擷取 Google Map 地圖並依經緯度與所屬群集顏色標示，zoom 值手動設定6 (亦可透過 RgoogleMaps 套件的 MaxZoom 自動取得)，從地圖中可觀察出群集3的 Distillery 似乎有分佈在島嶼沿海的特性...
+
+```{r}
+# whisky center
+w.center <- with(whisky.all, c(mean(Longitude), mean(Latitude)))
+# plot Scotch
+qmap(location = w.center, zoom = 6, darken = .6) +
+  geom_point(data = whisky.all, aes(x = Longitude, y = Latitude, colour = Groups)) +
+  theme_classic()
+```
+
+為了進一步檢視群集3，這次將地圖定位艾雷島(Islay)，之所以定位於此主要是因為艾雷威士忌以泥煤(peaty)調性聞名，看看群集3所屬的 Distillery 是否能正確反應出這種特性。結果沒讓人失望，Ardbeg, Caol Ila, Lagavulin, Laphroig 等相較於島上其他蒸餾廠，的確充滿強烈酒體、濃濃煙燻藥水等特性
+
+```{r}
+# plot Islay
+qmap(location = "Islay", zoom = 10, darken = .6) + geom_point() +
+  geom_text(data = whisky.all, aes(x = Longitude, y = Latitude, colour = Groups, label = Distillery)
+    , fontface = "bold", show.legend = F) +
+  theme_classic()
+```
+
+最後，列出群集3的資料供參考，看看這些蒸餾廠的威士忌是否都具 peaty 調性? 看來結果似乎是如此~
+
+```{r kable, echo=FALSE}
+kable(whisky.all[which(whisky.all$Groups=='3'),])
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Web pages extract.
+    + #### K-means clustering.
+    + #### Google map extract.
+
