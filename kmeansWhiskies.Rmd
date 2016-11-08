@@ -180,7 +180,9 @@ qmap(location = "Islay", zoom = 10, darken = .6) + geom_point() +
   theme_classic()
 ```
 
-最後，列出群集3的資料供參考，看看這些蒸餾廠的威士忌是否都具 peaty 調性? 看來結果似乎是如此~
+最後，列出群集3的資料供參考，看看這些蒸餾廠的威士忌是否都具 peaty 調性? 看來結果大部份是如此~
+
+如果要簡短的描述這3個群集，群集1著重於花果香、低酒體的調性讓人聯想 Speyside 及 Lowlands 區的酒，群集2的特性則有 Highlands 區的影子，豐富又飽滿，群集3則直接讓人聯想到 Islay 及 Islands 區的威士忌，那種特有的泥煤味真是印象深刻.
 
 ```{r kable, echo=FALSE}
 kable(whisky.all[which(whisky.all$Groups=='3'),])
