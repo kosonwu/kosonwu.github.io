@@ -75,7 +75,7 @@ corrplot(whisky.cor, method='square', tl.cex = 0.9)
 
 ***
 
-接著，探討86筆資料中威士忌風味(3至14欄)的群集關係，使用的是 k-means 分群法，由於尚未知道適宜的群數(k)，因此預先設定2至15群分別執行，為避免一次性的偏差、確保較理想的分群結果，每次程序重複執行20次，記錄每次分群的 Sum Of Squares 結果於 k.performance。之後利用 ggplot2 套件，繪成 Sum Of Squares By Cluster 圖表，由下圖可發現，當資料分成2群和3群時(k = 2 和 k = 3)，Sum Of Squares 明顯下降最多，k = 3 和 k =4 的降幅也相較於其他多一些，因次初步判定適宜的群數(k)可定為3或4...
+接著，探討86筆資料中威士忌風味(3至14欄)的群集關係，使用的是 k-means 分群法，由於尚未知道適宜的群數(k)，因此預先設定2至15群分別執行，為避免一次性的偏差、確保較理想的分群結果，每次程序重複執行20次，記錄每次分群的 Sum Of Squares 結果於 k.performance。之後利用 ggplot2 套件，繪成 Sum Of Squares By Cluster 圖表，由下圖可發現，當資料分成2群和3群時(k = 2 和 k = 3)，Sum Of Squares 明顯下降最多，k = 3 和 k =4 的降幅也相較於其他多一些，因此，初步判定適宜的群數(k)可定為3或4
 
 ```{r eval=FALSE}
 # k.performance
