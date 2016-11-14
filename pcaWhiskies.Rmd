@@ -1,0 +1,159 @@
+---
+title: ''
+date: "2016-11-12"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(psych)
+library(ggplot2)
+library(gridExtra)
+whisky.groups <- read.csv(file.path("data", "whiskyGroups.csv"), stringsAsFactors = F)
+whisky.groups$Groups <- as.factor(whisky.groups$Groups)
+whisky.flavour  <- whisky.groups[, c(3:14)]
+row.names(whisky.flavour) <- whisky.groups$Distillery
+```
+
+* ### scotch whiskies flavour mapping with PCA
+
+***
+
+    library(psych)
+    library(ggplot2)
+    library(gridExtra)
+    
+    psych：多變量, 主成份, 因子, 可靠性分析等工具套件
+    ggplot2：繪圖及空間可視化
+    gridExtra：繪圖排列功能套件
+ 
+***
+
+延續 [k-means cluster analysis of scotch whiskies](./kmeansWhiskies.html) 的主題，這次的目標是希望利用 PCA(Principal Component Analysis) 來建立 whiskies flavour map，使用的資料集 whisky.groups 為前次 K-means 分群後的 output，共86筆，18個變數欄位，包括流水編號(RowID)、蒸餾廠名稱(Distillery)、威士忌風味(3至14欄:Body, Sweetness, Smoky, Medicinal, Tobacco, Honey, Spicy, Winey, Nutty, Malty, Fruity, Floral)、郵遞區號(Postcode)、緯度(Latitude)、經度(Longitude)及群集編號(Groups)。首先從 whisky.groups 取出威士忌風味(3至14欄)作為後續 PCA 使用...
+
+```{r, eval=FALSE}
+# whisky.flavour
+whisky.flavour  <- whisky.groups[, c(3:14)]
+row.names(whisky.flavour) <- whisky.groups$Distillery
+```
+
+PCA 用途廣、可用在 dimensionality reduction, feature extraction, outlier detection ...等，不過在使用之前先看看資料是否適合使用 PCA
+
+***
+1. 檢測資料適用性：2種參考做法...
+
+  + MSA (Measure of Sampling Adequacy)：檢測變數間的平均相關。使用 psych 套件的 KMO，執行結果 Overall MSA =  0.7，這結果算是中等，MSA 值越高越好，若是低於0.5則不被接受，表示變數間沒有足夠相關，對於維度減少(使用 PCA )沒有意義。除了 Overall MSA，還有每個變數的 MSA，刪除一些最低 MAS 的變數，可改善 Overall MSA ...
+    
+```{r}
+KMO(cor(whisky.flavour, use = "pairwise.complete.obs"))
+```
+    
+  + Bartlett test：檢測變數間是否有統計關係。這個 test 假設變數間是獨立的( Null-hypothesis )，執行結果 p.value = 1.061041e-32，相當的小、趨近0，表示 correlation matrix 與 identity matrix 有顯著的不同，變數之間是有關聯的( Reject the null-hypothesis )，資料可以使用PCA
+
+```{r}
+cortest.bartlett(cor(whisky.flavour), n = 100)
+```
+
+簡單來說，Overall MSA 越高 或 p.value 越小，表示資料適合使用 PCA
+
+***
+
+2. 決定最佳 components 數量：3種參考做法...
+
+  + Kaiser criterion：經驗法則，留下標準差大於1者。執行結果有4個...若保留這4個 components， 表示大概可解釋原始變數約0.61579，也可利用 psych 套件的 VSS.scree 幫助可視化，它會在 eigen values(標準差的平方) = 1.0 繪出水平線，在水平線以上者即是可以決定的 components 數量
+
+```{r}
+summary(prcomp(whisky.flavour, scale = TRUE))
+VSS.scree(cor(whisky.flavour))
+```
+
+  + Elbow-rule：線圖同手臂一般，急彎處的點即是最佳 components 數量。若利用此 rule 參考線圖，可以把 components 數量訂為3
+
+  + 利用有點隨機資料的抽樣手法來決定：使用 psych 套件的 fa.parallel，執行結果最佳 components 數量為2
+
+```{r}
+fa.parallel(whisky.flavour)
+```
+
+以上三種參考做法建議值落在2 ~ 4，考量建立 whiskies flavour map 的目的，決定 keep 最佳 components 數量=2
+
+***
+
+3. 解釋 components
+
+  + 透過 rotation ( loadings ) 可以查看 component matrix，下圖顯示 PC1 主要包含了 Medicinal, Smoky, Tobacco, Body 等正向資訊和 Floral 等負向資訊，PC2 偏 Winey, Body, Honey, Nutty等負向資訊...
+
+```{r}
+pc <- prcomp(whisky.flavour, scale = TRUE)
+pc$rotation[, 1:2]
+```
+
+```{r, echo=FALSE}
+loadings <- data.frame(pc$rotation[, 1:2])
+loadings$FLAVOUR <- rownames(loadings)
+p1 <- ggplot(loadings, aes(x=reorder(FLAVOUR, PC1), y=PC1, fill=ifelse(PC1 > 0 ,"tomato","slateblue1"))) +
+  geom_bar(stat = "identity", show.legend = FALSE, position="identity") + 
+  theme_bw() +
+  coord_flip() +
+  labs(x = NULL, y = "loadings", title = "PC1")
+p2 <- ggplot(loadings, aes(x=reorder(FLAVOUR, PC2), y=PC2, fill=ifelse(PC2 > 0 ,"tomato","slateblue1"))) +
+  geom_bar(stat = "identity", show.legend = FALSE, position="identity") + 
+  theme_bw() +
+  coord_flip() +
+  labs(x = NULL, y = "loadings", title = "PC2")
+# Plot
+grid.arrange(p1, p2, ncol = 2)
+```
+
+  + biplot 可同時呈現觀測值(黑字部份)與原始變數資訊(紅字部份)在主要 components 座標上，提供視覺化輔助...
+
+```{r}
+biplot(pc, cex = c(0.7, 1))
+abline(h = 0, v = 0, lty = 'dashed')
+```
+
+  + varimax 透過正交旋轉( orthogonal rotation )方式，將 loadings matrix 變異數極大化，產生更容易解讀的分數
+  
+```{r}
+(pcv <- varimax(pc$rotation[, 1:2])$loadings)
+```
+
+根據以上，PC1 似乎主要受到煙燻藥水( Medicinal, Smoky )等氣味影響，與花香氣味( Floral )也成強烈對比，因此可以將 PC1 命名為 PEAT 成份，PC2 較不具體而且主要以負向居多，將其命名為 RICHNESS 成份
+
+***
+
+4. 建立 Whiskies Flavour Map
+
+```{r}
+whisky.pcv <- scale(whisky.flavour) %*% pcv
+plot(whisky.pcv, type = 'p', xlab = 'PEAT', ylab = 'RICHNESS', col='red', pch=20)
+text(whisky.pcv, labels = rownames(whisky.flavour))
+abline(h = 0, v = 0, lty = 'dashed')
+```
+
+結合上次 [K-means 分群](./kmeansWhiskies.html) 的主題加入 Groups 欄位並轉為 data frame，以 ggplot 繪出 Whiskies Flavour Map By Groups
+
+```{r}
+# transfer df and add Groups col.
+whisky.pcv <- transform(whisky.pcv, Groups=whisky.groups$Groups)
+# plot
+ggplot(whisky.pcv, aes(x=PC1, y=PC2, colour=Groups)) +
+  geom_text(aes(label=rownames(whisky.pcv)), size=4) + 
+  labs(x = "PEAT", y = "RICHNESS", title = "Scotch Whiskies Flavour Map By Groups") + 
+  geom_hline(yintercept = 0, color ='yellow') +
+  geom_vline(xintercept = 0, color ='yellow')
+```
+
+最後，透過 PCA 的方法，原始 whisky.flavour 的12個變數簡化成2個 components (PEAT, RICHNESS)，透過 Map 的確讓人更容易了解與解釋結果，不過由於資料本身的關係，簡化後的這2個 components 只解釋了原始變數的 0.4291...
+
+***
+
+* ### Lessons Learned:
+    + #### PCA diagnostics.
+    + #### Determining and interpreting components.
+    + #### Rotation methods.
+
