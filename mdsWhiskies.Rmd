@@ -1,0 +1,109 @@
+---
+title: ''
+date: "2016-11-21"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+whisky.groups <- read.csv(file.path("data", "whiskyGroups.csv"), stringsAsFactors = F)
+whisky.pca <- read.csv(file.path("data", "whisky.pcv.csv"), stringsAsFactors = F)
+row.names(whisky.pca) <- whisky.pca$X
+whisky.pca <- whisky.pca[,-1]
+whisky.pca$Groups <- as.factor(whisky.pca$Groups)
+```
+
+* ### scotch whiskies flavour mapping with MDS
+
+***
+
+    library(dplyr)
+    library(ggplot2)
+    library(gridExtra)
+    
+    dplyr：資料操控工具包
+    ggplot2：繪圖及空間可視化
+    gridExtra：繪圖排列功能套件
+ 
+***
+
+上次使用了 [PCA(Principal Component Analysis)](./pcaWhiskies.html) 方法產生 whiskies flavour map，然而，MDS (Multidimensional Scaling) 也可以幫助了解資料集的結構，將多維變數轉成二維，繪出 observations 的相對距離。同樣使用 whisky.groups  資料集，共86筆，18個變數欄位，包括流水編號(RowID)、蒸餾廠名稱(Distillery)、威士忌風味(3至14欄:Body, Sweetness, Smoky, Medicinal, Tobacco, Honey, Spicy, Winey, Nutty, Malty, Fruity, Floral)、郵遞區號(Postcode)、緯度(Latitude)、經度(Longitude)及群集編號(Groups)
+
+```{r, echo=FALSE}
+whisky.groups$Groups <- as.factor(whisky.groups$Groups)
+whisky.groups <- arrange(whisky.groups, Distillery)
+str(whisky.groups)
+```
+
+***
+
+先從 whisky.groups 取出威士忌風味(3至14欄)，用 Distillery 命名rownames、轉成matrix (86 * 12)，前10筆資料如下
+
+```{r kable, echo=FALSE}
+whisky.flavour  <- whisky.groups[, c(3:14)]
+row.names(whisky.flavour) <- whisky.groups$Distillery
+whisky.mtx <- as.matrix(whisky.flavour)
+kable(head(whisky.mtx, 10))
+```
+
+***
+
+透過矩陣乘積，產生 whisky.MP 的matrix，再利用 dist 轉換成距離，接著使用預設 stats 套件中的 cmdscale 來完成 MDS。查看 whisky.MDS 前10筆資料可發現，已經變成 86 * 2 的matrix
+
+```{r}
+# matrix product
+whisky.MP <- whisky.mtx %*% t(whisky.mtx)
+# dist
+whisky.dist <- dist(whisky.MP)
+# mds
+whisky.MDS <- cmdscale(whisky.dist)
+head(whisky.MDS, 10)
+```
+
+***
+
+確認資料一致性後，新增對應的 Groups 欄位並轉成 data frame，接著使用 ggplot 繪圖 
+
+```{r}
+identical(rownames(whisky.MDS), whisky.groups$Distillery)
+# add Groups col. and transfer to df.
+whisky.MDS <- transform(whisky.MDS, Groups = whisky.groups$Groups)
+ggplot(whisky.MDS, aes(x=X1, y=X2, colour=Groups)) +
+  geom_text(aes(label=rownames(whisky.MDS)), size=4) + 
+  ggtitle("Scotch Whisky Flavour Map via MDS") +
+  geom_hline(yintercept = 0, color ='yellow') +
+  geom_vline(xintercept = 0, color ='yellow')
+```
+
+為了方便與 PCA 的結果相比較，將 MDS 的 X1, X2 對調再繪製，發現兩者的結果在某程度上是雷同的，事實上，PCA 可視為最基本的 MDS 解法。雖然透過 MDS 可以快速將多維資料以2維方式展現(12個維度變成2個)，但透過 PCA 能了解命名定義 X, Y 軸屬性...
+
+```{r, echo=FALSE}
+g.mds <- ggplot(whisky.MDS, aes(x=X2, y=X1, colour=Groups)) +
+  geom_text(aes(label=rownames(whisky.MDS)), size=4) + 
+  ggtitle("MDS") +
+  geom_hline(yintercept = 0, color ='yellow') +
+  geom_vline(xintercept = 0, color ='yellow') + guides(color = "none") 
+
+g.pca <- ggplot(whisky.pca, aes(x=PC1, y=PC2, colour=Groups)) +
+  geom_text(aes(label=rownames(whisky.pca)), size=4) + 
+  labs(x = "PEAT", y = "RICHNESS", title = "PCA") + 
+  geom_hline(yintercept = 0, color ='yellow') +
+  geom_vline(xintercept = 0, color ='yellow') + guides(color = "none") 
+# Plot
+grid.arrange(g.mds, g.pca, nrow = 2)
+
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Multidimensional Scaling (MDS).
+
+

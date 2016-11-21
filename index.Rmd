@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [scotch whiskies flavour mapping with MDS](./mdsWhiskies.html) --- 
+利用 MDS 方法繪製 Scotch Whiskies Flavour Map. 
+( *2016-11-21* )
+
 * [scotch whiskies flavour mapping with PCA](./pcaWhiskies.html) --- 
 利用 PCA 方法繪製 Scotch Whiskies Flavour Map. 
 ( *2016-11-14* )
