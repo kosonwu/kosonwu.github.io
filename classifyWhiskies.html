@@ -465,7 +465,7 @@ model.SVM &lt;-<span class="st"> </span><span class="kw">train</span>(Groups ~<s
 <pre><code>##   parameter   class label
 ## 1     sigma numeric Sigma
 ## 2         C numeric  Cost</code></pre>
-<p>手動設定 tuning 參數，sigma 設定0.02, 0.02, … 0.07 試試，C 設定 1.0, 1.5, … 5.0，共 54 種組合…</p>
+<p>手動設定 tuning 參數，sigma 設定0.02, 0.03, … 0.07 試試，C 設定 1.0, 1.5, … 5.0，共 54 種組合…</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">set.seed</span>(<span class="dv">777</span>)
 <span class="co"># Tuning Grids</span>
 grid.SVM &lt;-<span class="st"> </span><span class="kw">expand.grid</span>(<span class="dt">sigma =</span> <span class="kw">seq</span>(<span class="fl">0.02</span>, <span class="fl">0.07</span>, <span class="dt">by =</span> <span class="fl">0.01</span>), <span class="dt">C =</span> <span class="kw">seq</span>(<span class="dv">1</span>, <span class="dv">5</span>, <span class="dt">length.out =</span> <span class="dv">9</span>))
