@@ -1,0 +1,542 @@
+---
+title: ''
+date: "2016-11-25"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(caret)
+library(gridExtra)
+whisky.groups <- read.csv(file.path("data", "whiskyGroups.csv"), stringsAsFactors = F)
+whisky.groups$Groups <- as.factor(whisky.groups$Groups)
+
+whisky.feature  <- whisky.groups[, c(3:14,18)]
+row.names(whisky.feature) <- whisky.groups$Distillery
+```
+
+* ### cross-validation and classification using the caret package
+
+***
+
+    library(caret)
+    library(C50)
+    library(plyr)
+    library(nnet)
+    library(kernlab)
+    library(klaR)
+    library(randomForest)
+    library(ggplot2)
+    library(gridExtra)
+    
+    caret：整合分類與迴歸模型的強大訓練框架
+    C50, plyr：載入 C5.0 Decision Tree 使用
+    nnet：載入 Neural Networks 使用
+    kernlab：載入 SVM with Radial 使用
+    klaR：載入 Naive Bayes 使用
+    randomForest：載入 Random Forest 使用
+    ggplot2：繪圖及空間可視化
+    gridExtra：繪圖排列功能套件
+ 
+***
+
+分類 (classification) 是 supervised learning 常見的一種 task，藉由 features 來預測已知的類別 (class)，廣泛應用於機器學習。本次使用的資料集繼續延用 [k-means cluster analysis of scotch whiskies](./kmeansWhiskies.html) 所產出的 output，目的是希望透過威士忌風味特徵(features)，了解這6種演算模型在此次預測類別(class)中的表現，這裡的類別是指群集編號(Groups)。資料一樣只有86筆，13個變數欄位，包括威士忌風味(1至12欄:Body, Sweetness, Smoky, Medicinal, Tobacco, Honey, Spicy, Winey, Nutty, Malty, Fruity, Floral)及群集編號(Groups)
+
+```{r, echo=FALSE}
+str(whisky.feature)
+```
+
+***
+
+為了確保分類的信賴程度、降低 overfitting 的發生，交叉驗證 (cross-validation, CV) 是必要的。常見的形式有 leave-one-out CV 和 k-fold CV 等，使用 caret 套件中的 trainControl() 即可設定，10-fold CV 是業界常用的標準，由於本案例的資料量很小，這裡使用了 10-fold CV 重複5次的做法...
+
+```{r}
+# set CV
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+```
+
+caret 套件能透過參數的組合來建立模型，此函式依據傳入的模型結果，找出參數當中的最佳解。accuracy 和 kappa 值常用來評估分類的 performance，以下設定 kappa 值最大時為最佳解
+
+```{r}
+# get best result
+getBest <- function(md)
+{
+  df <- md$results
+  index <- best(df, metric = "Kappa", maximize = TRUE)
+  best.df <- df[index,]
+  return(best.df)
+}
+```
+
+caret 套件 [Available Models](http://topepo.github.io/caret/available-models.html) 相當多，只要在 method 設定對應值即可載入。以下的做法將先使用預設參數來建立 model，觀察此 model 最佳解的值及參數，做為後續 tuning process 的依據，接下來的這6種演算模型都採用此策略...
+
+***
+
+* #### __C5.0 Decision Tree __
+
+C5.0 改善了 C4.5 演算法，透過適應增強(adaptive boosting)方式建立許多決策樹，再票選出最佳類別。從執行結果看來，預設的 C5.0 model 最佳解 Kappa = 0.8745444，所使用的參數為 model = rules, winnow = FALSE, trials = 10，一般來說 Kappa 至少要大於 0.6，這個結果已經很不錯，達到 very good agreement 的程度
+
+```{r, eval=FALSE}
+set.seed(777)
+model.C50 <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "C5.0")
+getBest(model.C50)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.C50 <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "C5.0")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.C50))
+```
+
+caret 套件允許各種演算模型設定 tuning 參數，使用 getModelInfo() 可以初步了解 model 所支援的參數類別和說明
+
+```{r}
+# Get Parameter
+getModelInfo(model = "C5.0")$C5.0$parameters
+```
+
+接下來設定 tuning 參數再重新執行一次，目標是希望 Kappa 值能更好(大於0.8745444)。trials 是增強的迭代次數，手動設定為 1 至 20 ，model 為模型類型(tree or rules)，winnow 為是否使用特徵選取(feature selection)的機制，後二者參數設定還是維持預設值...
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.C50 <- expand.grid(trials = c(1:20), model = "rules", winnow = FALSE)
+
+model.C50 <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.C50, method = "C5.0")
+getBest(model.C50)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.C50 <- expand.grid(trials = c(1:20), model = "rules", winnow = FALSE)
+
+model.C50 <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.C50, method = "C5.0")
+```
+
+經過 tuning process，C5.0 得到的最佳 Kappa 值還是0.8745444，從下圖看來 trials = 9, 10 附近的 Kappa 值較大
+
+```{r, echo=FALSE}
+kable(getBest(model.C50))
+```
+
+```{r, echo=FALSE}
+ggplot(model.C50) + scale_x_continuous(breaks = model.C50$results$trials) + 
+  ggtitle(model.C50$modelInfo$label) + 
+  geom_hline(yintercept = max(model.C50$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  geom_text(aes(label = with(model.C50$results, ifelse(Kappa == max(Kappa),max(Kappa),NA))), 
+            size=3.5, colour='royalblue', nudge_y=0.005, fontface = "bold", na.rm = T)
+```
+
+***
+
+* #### __Neural Networks__
+
+第2種演算模型使用神經網絡(Neural Networks)，method 對應值為 nnet，先以預設參數執行...預設的 Neural Networks model 最佳解 Kappa = 0.8082011，所使用的參數為 size = 3, decay = 0.1
+
+```{r, eval=FALSE}
+set.seed(777)
+model.Neural <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                      method = "nnet")
+getBest(model.Neural)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.Neural <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                      method = "nnet")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.Neural))
+```
+
+nnet 提供2個 tuning 參數，size 是設定 hidden layer 中的單位數(nodes)，size 越大交織出越複雜的網絡(layer 層數如果越多即所謂的 deep learning)，decay 是信號衰變的權重
+
+```{r}
+# Get Parameter
+getModelInfo(model = "nnet")$nnet$parameters
+```
+
+接下來手動設定 tuning 參數，size 設定 1 至 7，衰變權重設定6種，共 42 種組合...
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.Neural <- expand.grid(size = c(1:7), decay = c(0.5, 0.3, 0.1, 0.05, 0.01, 0))
+
+model.Neural <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.Neural, method = "nnet")
+getBest(model.Neural)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.Neural <- expand.grid(size = c(1:7), decay = c(0.5, 0.3, 0.1, 0.05, 0.01, 0))
+
+model.Neural <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.Neural, method = "nnet")
+```
+
+經過 tuning process，這次得到的最佳 Kappa 值為0.8549912 (大於之前的0.8082011)，所使用的參數設定為 size = 2, decay = 0.1
+
+```{r, echo=FALSE}
+kable(getBest(model.Neural)) 
+```
+
+```{r, echo=FALSE}
+suppressWarnings(
+  ggplot(model.Neural) + scale_x_continuous(breaks = model.Neural$results$size) +
+    ggtitle(model.Neural$modelInfo$label) +
+    geom_hline(yintercept = max(model.Neural$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+    geom_text(aes(label = with(model.Neural$results, ifelse(Kappa == max(Kappa), max(Kappa), NA))),
+      size = 3.5,
+      colour = 'royalblue',
+      nudge_y = 0.01,
+      fontface = "bold",
+      na.rm = T
+    )
+)
+```
+
+***
+
+* #### __Support Vector Machines (SVM)__
+
+支援向量機(SVM)的目標是找出最大邊界的超平面(hyperplane)，如此一來能精確辨別資料的類別，由於產出的結果缺乏可解釋性，因此和神經網絡一樣都是屬於黑箱(Black Box)方法。SVM 有多種 kernel 參數，這裡使用的 svmRadial 方法屬於徑向核心，預設的 SVM model 最佳解 Kappa = 0.8324079，使用的參數為 sigma = 0.0591834, C = 1
+
+```{r, eval=FALSE}
+set.seed(777)
+model.SVM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "svmRadial")
+getBest(model.SVM)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.SVM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "svmRadial")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.SVM))
+```
+
+svmRadial 提供2個 tuning 參數，sigma 是徑向(radial)核心方法中的一項超參數(hyper-parameters)，C 是 cost 超參數，適用於 SVM 所有核心
+
+```{r}
+# Get Parameter
+getModelInfo(model = "svmRadial")$svmRadial$parameters
+```
+
+手動設定 tuning 參數，sigma 設定0.02, 0.02, ... 0.07 試試，C 設定 1.0, 1.5, ... 5.0，共 54 種組合…
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.SVM <- expand.grid(sigma = seq(0.02, 0.07, by = 0.01), C = seq(1, 5, length.out = 9))
+
+model.SVM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                      tuneGrid = grid.SVM, method = "svmRadial")
+getBest(model.SVM)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.SVM <- expand.grid(sigma = seq(0.02, 0.07, by = 0.01), C = seq(1, 5, length.out = 9))
+
+model.SVM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                      tuneGrid = grid.SVM, method = "svmRadial")
+```
+
+經過 tuning process，這次得到的最佳 Kappa 值為0.8965109 (大於之前的0.8324079)，使用的參數為 sigma = 0.03, C = 2，從下圖也可觀察出較大的C值會導致較差的結果，過小的sigma值表現也普遍不佳
+
+```{r, echo=FALSE}
+kable(getBest(model.SVM))
+```
+
+```{r, echo=FALSE}
+suppressWarnings(
+  ggplot(model.SVM) + scale_x_continuous(breaks = model.SVM$results$C) + 
+  ggtitle(model.SVM$modelInfo$label) +
+  geom_hline(yintercept = max(model.SVM$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  geom_text(aes(label = with(model.SVM$results, ifelse(Kappa == max(Kappa), max(Kappa), NA))),
+            size = 3.5,
+            colour = 'royalblue',
+            nudge_y = 0.005,
+            fontface = "bold",
+            na.rm = T
+  )
+)
+```
+
+***
+
+* #### __Naive Bayes__
+
+單純貝氏(Naive Bayes)假設各屬性條件獨立，根據貝氏定理的機率方法來進行分類。method 對應值為 nb，預設的 Bayes model 最佳解 Kappa = 0.9030824，使用的參數 usekernel = FALSE, fL = 0, adjust = 1
+
+```{r, eval=FALSE}
+set.seed(777)
+model.Bayes <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                     method = "nb")
+getBest(model.Bayes)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.Bayes <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                     method = "nb")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.Bayes))
+```
+
+nb 有3個 tuning 參數，fL 是 Laplace 校正值，避免機率相乘結果為零，usekernel 為核心密度估計用，adjust 為密度估計時帶寬(bandwidth)調整的參數
+
+```{r}
+# Get Parameter
+getModelInfo(model = "nb")$nb$parameters
+```
+
+手動設定 tuning 參數，fL 設定0 至 3，由於沒有要核心密度估計，usekernel 和 adjust 維持預設值
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.Bayes <- expand.grid(fL = c(0:3), usekernel = FALSE, adjust = 1)
+
+model.Bayes <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                     tuneGrid = grid.Bayes, method = "nb")
+getBest(model.Bayes)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.Bayes <- expand.grid(fL = c(0:3), usekernel = FALSE, adjust = 1)
+
+model.Bayes <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                     tuneGrid = grid.Bayes, method = "nb")
+```
+
+經過 tuning process，這次得到的最佳 Kappa 值為0.9030824，即使將 Laplace 值設為1, 2, 3 
+
+```{r, echo=FALSE}
+kable(getBest(model.Bayes))
+```
+
+```{r, echo=FALSE}
+suppressWarnings(
+  ggplot(model.Bayes) + scale_x_continuous(breaks = model.Bayes$results$fL) + 
+  ggtitle(model.Bayes$modelInfo$label) +
+  ylim(0.7, 1) +
+  geom_hline(yintercept = max(model.Bayes$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  annotate("text", label = max(model.Bayes$results$Kappa), x = 0.25, y = max(model.Bayes$results$Kappa)*1.01, 
+           color = "royalblue", size = 3.5, fontface = "bold")
+)
+```
+
+***
+
+* #### __Random Forests__ 
+
+隨機森林(Random Forests, RF)結合了重抽集成(bootstrap aggregating, 簡稱 bagging)的基本原理，使用隨選特徵(random feature selection)的做法來產生許多決策樹，並利用投票方式組成專家團隊(森林)，因此也稱為 Decision Tree Forests。由於只利用到小部份的隨機特徵，RF 可以處理很大的資料集，避免造成維度詛咒(curse of dimensionality)。預設的 RF model 最佳解 Kappa = 0.8618625，所使用的參數 mtry = 2
+
+```{r, eval=FALSE}
+set.seed(777)
+model.RF <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                  method = "rf")
+getBest(model.RF)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.RF <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                  method = "rf")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.RF))
+```
+
+rf 只有1個 tuning 參數，mtry 是在每次裂解的隨選特徵(預測因子)個數
+
+```{r}
+# Get Parameter
+getModelInfo(model = "rf")$rf$parameters
+```
+
+手動設定 tuning 參數，mtry 設定 1 至 20，查看不同 mtry 值的分類成效...
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.RF <- expand.grid(mtry = c(1:20))
+
+model.RF <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.RF, method = "rf")
+getBest(model.RF)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.RF <- expand.grid(mtry = c(1:20))
+
+model.RF <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.RF, method = "rf")
+```
+
+經過 tuning process，得到的最佳 Kappa 值為0.8862256 (大於之前的0.8618625)，所使用的參數 mtry = 4，這個結果與用特徵數開根號的做法相近... sqrt(12) = 3.464102
+
+```{r, echo=FALSE}
+kable(getBest(model.RF))
+```
+
+```{r, echo=FALSE}
+ggplot(model.RF) + scale_x_continuous(breaks = model.RF$results$mtry) + 
+  ggtitle(model.RF$modelInfo$label) +
+  geom_hline(yintercept = max(model.RF$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  geom_text(aes(label = with(model.RF$results, ifelse(Kappa == max(Kappa), max(Kappa), NA))),
+            size = 3.5,
+            colour = 'royalblue',
+            nudge_y = 0.005,
+            fontface = "bold",
+            na.rm = T)
+```
+
+***
+
+* #### __k-Nearest Neighbors (k-NN)__
+
+最後使用懶惰學習法(Lazy Learning)  k-NN，一種物以類聚的概念，使用投票表決來制訂所屬的類別，由於簡單又直覺，在分類方法上很常見…預設的 k-NN model 最佳解 Kappa = 0.8893649，所使用的參數 k = 9
+
+```{r, eval=FALSE}
+set.seed(777)
+model.KNN <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "knn")
+getBest(model.KNN)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.KNN <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "knn")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.KNN))
+```
+
+knn 只有1個 tuning 參數，k 是最鄰近的個數，適當的 k 值設定除了檢測不同 k  值的分類成效，另一個常見的做法是用訓練資料個數的平方根
+
+```{r}
+# Get Parameter
+getModelInfo(model = "knn")$knn$parameters
+```
+
+接下來手動設定 tuning 參數，k 設定 1 至 15，查看不同 k 值的分類成效
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.KNN <- expand.grid(k = c(1:15))
+
+model.KNN <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.KNN, method = "knn")
+getBest(model.KNN)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.KNN <- expand.grid(k = c(1:15))
+
+model.KNN <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.KNN, method = "knn")
+```
+
+經過 tuning process，維持 k = 9 時 Kappa 值最大，最佳 k 值恰好與訓練資料數的平方根相吻合... sqrt(86 * 0.9) = 8.797727
+
+```{r, echo=FALSE}
+kable(getBest(model.KNN))
+```
+
+```{r, echo=FALSE}
+ggplot(model.KNN) + scale_x_continuous(breaks = model.KNN$results$k) + 
+  ggtitle(model.KNN$modelInfo$label) +
+  geom_hline(yintercept = max(model.KNN$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  geom_text(aes(label = with(model.KNN$results, ifelse(Kappa == max(Kappa), max(Kappa), NA))),
+            size = 3.5,
+            colour = 'royalblue',
+            nudge_y = 0.005,
+            fontface = "bold",
+            na.rm = T)
+```
+
+***
+
+* #### __Performance Differences__
+
+在完成6種分類模型後，最後進行分類成效的比較。caret 套件提供了 resamples() 方法，能將各種模型的結果整理及可視化...
+
+```{r}
+resamps <- resamples(
+  list(
+    C5.0 = model.C50,
+    NeuralNetworks = model.Neural,
+    SVM = model.SVM,
+    NaiveBayes = model.Bayes,
+    RandomForests = model.RF,
+    KNN = model.KNN
+  )
+)
+```
+
+在準確度(Accuracy)方面，6種分類模型應用在這個資料集的表現上，平均準確度都達到0.92以上，其中以 SVM 的 0.9449 最高，NaiveBayes 的 0.9440 次之...
+
+```{r, echo=FALSE}
+kable(summary(resamps)$statistics$Accuracy)
+```
+
+在 Kappa 表現上，各模型的平均值也有達到0.85以上，其中以 NaiveBayes 的 0.9031 最高，SVM 的 0.8965 次之...不過在50次 Resampling 的結果之中，NaiveBayes 都有10次曾出現 NA 的值
+
+```{r, echo=FALSE}
+kable(summary(resamps)$statistics$Kappa)
+```
+
+透過圖示，更容易解讀各項分類成效，總括來說，SVM 和 NaiveBayes 的平均值相近，包辦前2名，不過在 95% 信心水準下，SVM 的信賴區間比較集中
+
+```{r, echo=FALSE}
+p2 <- dotplot(resamps, metric='Kappa')
+p1 <- dotplot(resamps, metric='Accuracy')
+grid.arrange(p1, p2, ncol = 2)
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Cross-validation and automated parameter tuning by caret.
+    + #### C5.0 Decision Tree.
+    + #### Neural Networks.
+    + #### Support Vector Machines (SVM).
+    + #### Naive Bayes.
+    + #### Random Forests.
+    + #### k-Nearest Neighbors (k-NN).
+
+

@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [cross-validation and classification using the caret package](./classifyWhiskies.html) --- 
+使用 caret 套件交叉驗證、分類學習，以 C5.0, Neural Networks, SVM, Naive Bayes, Random Forests and k-NN 為主.
+( *2016-11-25* )
+
 * [scotch whiskies flavour mapping with MDS](./mdsWhiskies.html) --- 
 利用 MDS 方法繪製 Scotch Whiskies Flavour Map. 
 ( *2016-11-21* )
