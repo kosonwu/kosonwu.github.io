@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [boosting in ensembles using the caret package](./ensembleBoosting.html) --- 
+Ensemble modeling，以 GBM (Gradient Boosted Machine) 和 XGBoost (eXtreme Gradient Boosting) 為例.
+( *2016-12-13* )
+
 * [cross-validation and classification using the caret package](./classifyWhiskies.html) --- 
 使用 caret 套件交叉驗證、分類學習，以 C5.0, Neural Networks, SVM, Naive Bayes, Random Forests and k-NN 為主.
 ( *2016-11-25* )

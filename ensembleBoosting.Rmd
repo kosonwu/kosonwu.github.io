@@ -1,0 +1,303 @@
+---
+title: ''
+date: "2016-12-13"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(caret)
+library(ggplot2)
+whisky.groups <- read.csv(file.path("data", "whiskyGroups.csv"), stringsAsFactors = F)
+whisky.groups$Groups <- as.factor(whisky.groups$Groups)
+
+whisky.feature  <- whisky.groups[, c(3:14,18)]
+row.names(whisky.feature) <- whisky.groups$Distillery
+# 10-fold CV
+#ctrl <- trainControl(method = "cv", number = 10)
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+# get best result
+getBest <- function(md)
+{
+  df <- md$results
+  index <- best(df, metric = "Kappa", maximize = TRUE)
+  best.df <- df[index,]
+  return(best.df)
+}
+```
+
+* ### boosting in ensembles using the caret package
+
+***
+
+    library(caret)
+    library(gbm)
+    library(plyr)
+    library(xgboost)
+    library(ggplot2)
+    
+    caret：整合分類與迴歸模型的強大訓練框架
+    gbm：載入 Gradient Boosted Machines (GBM) 使用
+    plyr：工具套件, 配合 gbm 與 xgboost 載入使用
+    xgboost：載入 Extreme Gradient Boosting (XGBoost) 使用
+    ggplot2：繪圖及空間可視化
+ 
+***
+
+Bagging(Bootstrap aggregating) 和 Boosting 是2種很受歡迎的 [ensemble](http://www.kdnuggets.com/2016/11/data-science-basics-intro-ensemble-learners.html) 技術，在[上一次的分類學習方法](./classifyWhiskies.html)中，Random Forest 和 C5.0 便是屬於 ensemble modeling，簡單來說，這2種技術運用一種演算法來建立一組models，最後用投票方式產出預測的結果，例如 Random Forest 用 bootstrap 的抽樣手法建立一組 decision trees 的 models，平均其結果做為預測值。Boosting 也是運用隨機抽樣和投票的手法，不過在建立 models 時會參照互補，根據上一回結果進行調整，並加入了權重的概念，因此它能增強 [weak learners](https://discuss.analyticsvidhya.com/t/what-is-the-fundamental-difference-between-randomforest-and-gradient-boosting-algorithms/2341/2)。GBM 和 XGBoost 是基於 Boosting 的2種技術，在精確率表現上相當卓越(但 overfitting 也常被批評)，頗受資料科學家喜愛，caret 套件對它的支援和整合也不錯，這次就來瞧一瞧它的魅力，使用的資料和策略方法跟前次相同...
+
+***
+
+* #### __GBM (Gradient Boosted Machine) __
+
+GBM (Gradient Boosted Machine) method 對應值為 gbm，預設值的最佳解 Kappa = 0.8733176，所使用的參數為 n.trees = 50, interaction.depth = 2, shrinkage = 0.1, n.minobsinnode = 10
+
+```{r, eval=FALSE}
+set.seed(777)
+model.GBM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl,
+                   method = "gbm")
+getBest(model.GBM))
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.GBM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl,
+                   method = "gbm")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.GBM))
+```
+
+gbm 提供4個 tuning 參數：
+
+  1. n.trees 是 Boosting 迭代的次數
+  
+  2. interaction.depth 是變數交互作用最大深度，例如: 1 表示添加模式、2 表示雙向互動...
+  
+  3. shrinkage 是應用在每棵樹擴展時收縮參數(每棵樹的學習速率)
+  
+  4. n.minobsinnode 是樹節點中的最小觀測數
+
+```{r}
+# Get Parameter
+getModelInfo(model = "gbm")$gbm$parameters
+```
+
+手動設定 tuning 參數，n.trees 設定 50 ~ 500，間隔 50 ，interaction.depth 設定最大深度 1 ~ 3，學習速率 shrinkage 設定 0.1, 0.2, 0.3，n.minobsinnode 維持預設的 10
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.GBM <- expand.grid(
+    n.trees = seq(50, 500, by = 50),
+    interaction.depth = c(1:3),
+    shrinkage = seq(0.1, 0.3, by = 0.1),
+    n.minobsinnode = 10
+  )
+model.GBM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.GBM, method = "gbm")
+getBest(model.GBM)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.GBM <- expand.grid(
+    n.trees = seq(50, 500, by = 50),
+    interaction.depth = c(1:3),
+    shrinkage = seq(0.1, 0.3, by = 0.1),
+    n.minobsinnode = 10
+  )
+model.GBM <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.GBM, method = "gbm")
+```
+
+經過 tuning process，這次得到的最佳 Kappa 值為0.8908807 (大於之前的0.8733176)，使用的參數設定 n.trees = 500, interaction.depth = 3, shrinkage = 0.3, n.minobsinnode = 10。從下圖可看出變數交互作用最大深度(Max Tree Depth)為 1 時表現普遍不佳，學習速率 0.3 在最大迭代值 500 時 Kappa 最大...後續再 tuning 增加學習速率或迭代值或許能得到更佳的解
+
+```{r, echo=FALSE}
+kable(getBest(model.GBM))
+```
+
+```{r, echo=FALSE}
+suppressWarnings(
+  ggplot(model.GBM) + 
+  ggtitle(model.GBM$modelInfo$label) + 
+  geom_hline(yintercept = max(model.GBM$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  geom_text(aes(label = with(model.GBM$results, ifelse(Kappa == max(Kappa), max(Kappa), NA))),
+    size = 3.5,
+    colour = 'royalblue',
+    nudge_y = 0.002,
+    fontface = "bold",
+    na.rm = T
+  )
+)
+```
+
+此外，caret 套件提供 varImp 方法，能計算出 model 中變數的重要性(variable importance)
+
+```{r, eval=FALSE}
+varImp(model.GBM)
+```
+
+```{r, echo=FALSE}
+# 計算變數重要性(variable importance)
+varImp.GMB <- varImp(model.GBM)
+#plot(varImp.GMB)
+# plot 
+ggplot(varImp.GMB) +  
+  ggtitle(paste('variable importance -', toupper(varImp.GMB$model))) + 
+  geom_text(aes(label=sort(round(varImp.GMB$importance[,1],2), decreasing=T)), 
+            colour="white", hjust= 1.2, fontface = "bold")
+```
+
+***
+
+* #### __XGBoost (eXtreme Gradient Boosting) __
+
+XGBoost 的 method 對應值為 xgbTree，預設值的最佳解 Kappa = 0.9200535，表現的相當不錯，使用的參數為 nrounds  = 50, max_depth = 1, eta = 0.3, gamma = 0, colsample_bytree = 0.8, min_child_weight = 1
+
+```{r, eval=FALSE}
+set.seed(777)
+model.XGBoost <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "xgbTree")
+getBest(model.XGBoost))
+```
+
+```{r, include=FALSE}
+set.seed(777)
+model.XGBoost <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   method = "xgbTree")
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.XGBoost))
+```
+
+xgbTree 提供6個 tuning 參數：
+
+  1. nrounds 是最大迭代值
+  
+  2. max_depth 為樹的最大深度，增加此值將使模型更複雜、可能 overfitting
+  
+  3. eta 是控制學習速率的參數(0 ~ 1)，用來防止 overfitting，一般學習速率小、迭代值會設較大
+  
+  4. gamma 是需要進一步分割時減少損失最小值，值若越大代表算法越保守
+  
+  5. colsample_bytree 參數(0 ~ 1)決定每棵樹隨選特徵最大值
+  
+  6. min_child_weight 是實例權重和的最小值，若小於該值則停止分割動作，值若越大代表算法越保守
+
+```{r}
+# Get Parameter
+getModelInfo(model = "xgbTree")$xgbTree$parameters
+```
+
+手動設定 tuning 參數，nrounds 設定 50 ~ 500，間隔 50 ，max_depth 設定最大深度 1 ~ 3，學習速率 eta 設定 0.1, 0.2, 0.3，gamma 維持預設的 0，colsample_bytree 設 0.8，min_child_weight 維持預設的 1
+
+```{r, eval=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.XGBoost <- expand.grid(
+  nrounds = seq(50, 500, by = 50),
+  max_depth = c(1:3),
+  eta = seq(0.1, 0.3, by = 0.1),
+  gamma = 0,
+  colsample_bytree = 0.8, 
+  min_child_weight = 1
+)
+model.XGBoost <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.XGBoost, method = "xgbTree")
+getBest(model.XGBoost)
+```
+
+```{r, include=FALSE}
+set.seed(777)
+# Tuning Grids
+grid.XGBoost <- expand.grid(
+  nrounds = seq(50, 500, by = 50),
+  max_depth = c(1:3),
+  eta = seq(0.1, 0.3, by = 0.1),
+  gamma = 0,
+  colsample_bytree = 0.8, 
+  min_child_weight = 1
+)
+model.XGBoost <- train(Groups ~ ., data = whisky.feature, metric = "Kappa", trControl = ctrl, 
+                   tuneGrid = grid.XGBoost, method = "xgbTree")
+```
+
+經過 tuning process，這次得到的最佳 Kappa 值為 0.9224663 (比之前的 0.9200535 更佳)，使用的參數設定 nrounds = 300, min_child_weight = 1, colsample_bytree = 0.8, gamma = 0, max_depth = 1, eta = 0.1
+
+```{r, echo=FALSE}
+kable(getBest(model.XGBoost))
+```
+
+```{r, echo=FALSE}
+suppressWarnings(
+ggplot(model.XGBoost) + 
+  ggtitle(model.XGBoost$modelInfo$label) + 
+  geom_hline(yintercept = max(model.XGBoost$results$Kappa), color = 'royalblue', linetype = "dotdash") +
+  geom_text(aes(label = with(model.XGBoost$results, ifelse(Kappa == max(Kappa), max(Kappa), NA))),
+            size = 3.5,
+            colour = 'royalblue',
+            y = max(model.XGBoost$results$Kappa) + 0.002,
+            fontface = "bold",
+            na.rm = T
+  )
+  )
+```
+
+計算變數重要性(variable importance)，可看出順序比重和 GBM 有所不同
+
+```{r, eval=FALSE}
+varImp(model.XGBoost)
+```
+
+```{r, echo=FALSE}
+# 計算變數重要性(variable importance)
+varImp.XGBoost <- varImp(model.XGBoost)
+#plot(varImp.GMB)
+# plot 
+ggplot(varImp.XGBoost) +  
+  ggtitle(paste('variable importance -', toupper(varImp.XGBoost$model))) + 
+  geom_text(aes(label=sort(round(varImp.XGBoost$importance[,1],2), decreasing=T)), 
+            colour="white", hjust= 1.2, fontface = "bold")
+```
+
+```{r, include=FALSE}
+resamps <- resamples(
+  list(
+    GBM = model.GBM,
+    XGBoost = model.XGBoost
+  )
+)
+```
+
+***
+
+* #### __Performance Differences__
+
+XGBoost 是 GBM 的改良版本，從這次結果看來不管是 Accuracy 或 Kappa 表現上都比 GBM 來的好，也超越了上次6種分類方法，表示它的對應權重及錯誤修正機制的確能讓 weak learners 變強，或許這也是它廣受歡迎之處
+
+```{r, echo=FALSE}
+kable(summary(resamps)$statistics$Accuracy)
+```
+
+```{r, echo=FALSE}
+kable(summary(resamps)$statistics$Kappa)
+```
+
+```{r, echo=FALSE}
+dotplot(resamps)
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Ensemble Learning Techniques
+    + #### GBM (Gradient Boosted Machine)
+    + #### XGBoost (eXtreme Gradient Boosting)
