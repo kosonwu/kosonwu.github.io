@@ -18,6 +18,10 @@ knitr::opts_chunk$set(echo = TRUE)
 Ensemble modeling，以 GBM (Gradient Boosted Machine) 和 XGBoost (eXtreme Gradient Boosting) 為例.
 ( *2016-12-13* )
 
+***
+
+> __PREVIOUS__
+
 * [cross-validation and classification using the caret package](./classifyWhiskies.html) --- 
 使用 caret 套件交叉驗證、分類學習，以 C5.0, Neural Networks, SVM, Naive Bayes, Random Forests and k-NN 為主.
 ( *2016-11-25* )
@@ -37,5 +41,3 @@ Extract 網頁資訊、利用 K-means 分群法對 Scotch Whiskies 進行分群�
 * [create a website through RStudio](./createWebsite.html) --- 
 利用 RStudio 進行 Git 版本控管、R Markdown 產出 HTML 網頁至 Github. 
 ( *2016-11-03* )
-
-> __PREVIOUS__
