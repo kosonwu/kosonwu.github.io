@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [data exploration with SparkR 2.0.2](./exerciseSparkR.html) --- 
+使用 SparkR 2.0.2 進行數據探索.
+( *2016-12-15* )
+
 * [boosting in ensembles using the caret package](./ensembleBoosting.html) --- 
 Ensemble modeling，以 GBM (Gradient Boosted Machine) 和 XGBoost (eXtreme Gradient Boosting) 為例.
 ( *2016-12-13* )

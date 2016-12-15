@@ -1,0 +1,179 @@
+---
+title: ''
+date: "2016-12-15"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(SparkR, lib.loc = c(file.path(Sys.getenv("SPARK_HOME"), "R", "lib")))
+sparkR.session(master = "local[*]", sparkConfig = list(spark.driver.memory = "2g"))
+sdf <- read.text(file.path(Sys.getenv('SPARK_HOME'),'data','tsv_wiki'))
+```
+
+* ### Data Exploration with SparkR
+
+***
+
+    library(SparkR)
+
+    SparkR：連接使用Spark生態系統功能套件。安裝Spark後會存放在目錄，例如`r file.path(Sys.getenv("SPARK_HOME"), "R", "lib")`
+ 
+***
+
+Spark 是以 JVM 為主的數據處理引擎，具分散特性，能夠組成強大的叢集運算系統。這優點恰好可以解決 R 在處理大量數據時的不足(R運算受限於本機的memory)，而 SparkR 不但是這兩者的橋接器，它也帶來了分散平行運算的能力，關於 [SParkR 的介紹](https://www.youtube.com/watch?v=5o-9ozwQgMw)可以參考這個影片，下圖是影片裡頭的畫面，也是理解使用 SparkR 的重要概念...
+
+R 有 DataFrame 資料結構，SparkR 有 SparkDataFrame，雖然都有 DataFrame 字眼，但內涵意義有所不同，下圖我的理解是使用 SparkR createDataFrame() 方法會在 JVM 建立 SparkDataFrame 物件，而使用 SparkR collect() 方法則拉回本機產生 DataFrame 物件，表示在處理大數據時應多利用 SparkDataFrame 物件、盡量減少 I/O (轉換DataFrame) 次數，這樣使用 SparkR 才有意義。簡單的說，利用 Spark 進行資料處理，使用 R 來分析和視覺化，發揮各自的長處
+
+![](image/sparkR.jpg)
+
+***
+
+接下來將利用 SparkR 進行資料探索，內容是參考<a href="http://ampcamp.berkeley.edu/5/exercises/sparkr.html" target="_blank">http://ampcamp.berkeley.edu</a>，使用的<a href="http://d12yw77jruda6f.cloudfront.net/training-downloads.zip" target="_blank">資料集</a>也是，不過連結中使用的是 1.x 版，這裡使用的是 Spark 2.0.2，語法上多有差異。首先建立 SparkSession 物件，串起與 SparkR 的連線，原先 1.x 版的 SparkContext 與 SQLContext 物件已經被 SparkSession 取代了，由於 Spark 安裝於本機測試，這裡位置指定local，使用4個 threads 來執行(看機器有多少核心就設多少，也可用*代替)
+
+```{r, eval=FALSE}
+# ini a new SparkSession
+sparkR.session(master = "local[4]", sparkConfig = list(spark.driver.memory = "2g"))
+```
+
+***
+
+1. 讀入資料、建立SparkDataFrame物件(sdf)
+
+```{r eval=FALSE}
+# Create a SparkDataFrame from a text file.
+sdf <- read.text(file.path(Sys.getenv('SPARK_HOME'),'data','tsv_wiki'))
+```
+
+***
+
+2. 查看sdf前3筆資料。原有連結使用 take 方法，會轉換成R的DataFrame (在處理大量資料可能會增加loading)
+
+```{r}
+showDF(sdf, 3)
+```
+
+***
+
+3. 查看筆數
+
+```{r}
+# Returns the number of items in a group
+count(sdf)
+```
+
+***
+
+4. 將半結構化的資料，拆解成具有schema (id, title, modified, text, username) 的 SparkDataFrame
+
+```{r}
+parseFields <- function(x) {
+  Sys.setlocale("LC_ALL", "C") # necessary for strsplit() to work correctly
+  parts <- strsplit(x, "\t")[[1]]
+  ls <- list(id=parts[1], title=parts[2], modified=parts[3], text=parts[4], username=parts[5])
+}
+
+parsedRDD <- createDataFrame(lapply(collect(sdf)[,1], parseFields))
+
+showDF(parsedRDD, 3)
+```
+
+***
+
+5. 查看筆數(筆數應與sdf相同)
+
+```{r}
+count(parsedRDD)
+```
+
+***
+
+6. SparkR 有2種programming model類型，使用 SparkDataFrame APIs 和 SQL
+
+先過濾掉username中有null的資料，check筆數
+
+* using SparkDataFrame APIs
+
+```{r}
+printSchema(parsedRDD)
+# filter NA
+nonEmptyUsernames <- filter(parsedRDD, isNotNull(parsedRDD$username))
+# 同上
+# nonEmptyUsernames <- filter(parsedRDD, 'username IS NOT null')
+count(nonEmptyUsernames)
+```
+
+* using SQL
+
+```{r}
+# create and register as a temporary view
+createOrReplaceTempView(parsedRDD, 'sdfView')
+nonEmptyUsernames2 <- sql('SELECT username FROM sdfView WHERE username IS NOT null')
+count(nonEmptyUsernames2)
+```
+
+出現次數最多的前10位users
+
+* using SparkDataFrame APIs
+
+```{r}
+# groupBy
+userCounts <- count(groupBy(nonEmptyUsernames, 'username'))
+showDF(arrange(userCounts, desc(userCounts$count)), 10)
+```
+
+* using SQL
+
+```{r}
+userCounts2 <- sql('SELECT username,count(*) AS count FROM sdfView WHERE username IS NOT null GROUP BY username')
+showDF(arrange(userCounts2, desc(userCounts2$count)), 10)
+```
+
+轉成R的DataFrame, using R’s plot
+
+```{r}
+# plot
+df.count <- collect(arrange(userCounts, desc(userCounts$count)))
+plot(df.count$count, log="y", type="h", lwd=10, lend=2)
+```
+
+***
+
+7. 最後找出包含California字眼的文件筆數
+
+* using SparkDataFrame APIs
+
+```{r}
+# count articles contain the word “California"
+texts <-  filter(parsedRDD, "text like '%California%'")
+count(texts)
+```
+
+* using SQL
+
+```{r}
+texts2 <- sql("SELECT * FROM sdfView WHERE text like '%California%'")
+count(texts2)
+```
+
+***
+
+8. 關閉session
+
+```{r}
+sparkR.session.stop()
+```
+
+***
+
+比較SparkR 1.x 與 2.0 的語法發現，在解析非(半)結構化raw data時，還是得利用一些R base 語法來結合SparkR，不過一旦轉成有schema的 SparkDataFrame，接下來的處理就容易多了(SparkDataFrame APIs 和 SQL的應用)。2.0 版中很多語法也變的直覺簡單，尤其熟SQL的朋友可以直接用SQL語法，不一定非得用SparkDataFrame APIs，其他像是 merge 和 join 等也都有支援，相當方便。Spark 2.0 在 RDD 上層多了 SparkDataFrame，R使用者不必去面對難搞的RDD，只要對SparkDataFrame進行操控就好，亦即使用SparkR去做ETL工作，分析的任務再交給R.
+
+***
+
+* ### Lessons Learned:
+    + #### Data Exploration with SparkR and SQL
+    
