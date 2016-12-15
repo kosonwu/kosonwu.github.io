@@ -15,7 +15,7 @@ sparkR.session(master = "local[*]", sparkConfig = list(spark.driver.memory = "2g
 sdf <- read.text(file.path(Sys.getenv('SPARK_HOME'),'data','tsv_wiki'))
 ```
 
-* ### Data Exploration with SparkR
+* ### data exploration with SparkR 2.0.2
 
 ***
 
