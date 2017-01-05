@@ -14,6 +14,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [multiple linear regression analysis](./linearRegression.html) --- 
+多元線性迴歸分析.
+( *2017-01-05* )
+
+***
+
+> __PREVIOUS__
+
 * [data exploration with SparkR 2.0.2](./exerciseSparkR.html) --- 
 使用 SparkR 2.0.2 進行數據探索.
 ( *2016-12-15* )
@@ -21,10 +29,6 @@ knitr::opts_chunk$set(echo = TRUE)
 * [boosting in ensembles using the caret package](./ensembleBoosting.html) --- 
 Ensemble modeling，以 GBM (Gradient Boosted Machine) 和 XGBoost (eXtreme Gradient Boosting) 為例.
 ( *2016-12-13* )
-
-***
-
-> __PREVIOUS__
 
 * [cross-validation and classification using the caret package](./classifyWhiskies.html) --- 
 使用 caret 套件交叉驗證、分類學習，以 C5.0, Neural Networks, SVM, Naive Bayes, Random Forests and k-NN 為主.

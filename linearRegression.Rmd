@@ -1,0 +1,489 @@
+---
+title: ''
+date: "2017-01-05"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(car)
+library(mice)
+library(gvlma)
+library(glmnet)
+library(caret)
+Cars93_1 <- read.csv(file.path("data", "Cars93_1.csv"), stringsAsFactors = FALSE)
+# remove
+Cars93_1.naomit <- subset(Cars93_1, Cars93_1$Rear.seat.room != complete.cases(Cars93_1$Rear.seat.room))
+Cars93_1.naomit <- subset(Cars93_1.naomit, Cars93_1.naomit$Luggage.room != complete.cases(Cars93_1.naomit$Luggage.room))
+# simulate
+set.seed(777)
+simulation <- mice(Cars93_1, method = "rf", maxit = 5, printFlag = F)
+densityplot(simulation)
+Cars93_1.simulate <- complete(simulation, action =1)
+# mean
+Cars93_1.mean <- Cars93_1
+Cars93_1.mean$Rear.seat.room[is.na(Cars93_1.mean$Rear.seat.room)] <-
+  mean(Cars93_1.mean$Rear.seat.room, na.rm = T)
+Cars93_1.mean$Luggage.room[is.na(Cars93_1.mean$Luggage.room)] <-
+  mean(Cars93_1.mean$Luggage.room, na.rm = T)
+# multiple linear regression model(多元線性迴歸)
+lm.naomit <- lm(MPG.Overall ~ ., data = Cars93_1.naomit)
+lm.simulate <- lm(MPG.Overall ~ ., data = Cars93_1.simulate)
+lm.mean <- lm(MPG.Overall ~ ., data = Cars93_1.mean)
+# analysis of variance (ANOVA)
+# 查看 independent variable 是否有顯著貢獻 to dependent variable
+lm.naomit.aov <-
+  update(lm.naomit, . ~ . - Length - Width - Turn.circle - Rear.seat.room - Luggage.room)
+lm.simulate.aov <- 
+  update(lm.simulate, . ~ . - Length - Wheelbase - Width - Turn.circle - Rear.seat.room)
+lm.mean.aov <- 
+  update(lm.mean, . ~ . - Length - Wheelbase - Width - Turn.circle - Rear.seat.room - Luggage.room)
+# Multicollinearity (多重共線性)
+# Variance Inflation Factors(變異數膨脹因子)
+# 大於10表示有強烈可能是多重共線性. 從最大開始,一次刪一個,之後檢測,再重複執行
+#library("car", lib.loc="C:/Program Files/R/R-3.3.1/library")
+vif(lm.naomit.aov)
+lm.naomit.aov2 <- update(lm.naomit.aov, .~. -Weight)
+vif(lm.naomit.aov2)
+lm.naomit.aov3 <- update(lm.naomit.aov2, .~. -EngineSize)
+vif(lm.naomit.aov3)
+
+vif(lm.simulate.aov)
+lm.simulate.aov2 <- update(lm.simulate.aov, .~. -EngineSize)
+vif(lm.simulate.aov2)
+
+vif(lm.mean.aov)
+# Outliers(離群值)
+# remove outliers one by one and get R^2
+outliersRemovingCheck <- function(md, points) {
+  df <- md$model
+  for (i in 1:length(points)) {
+    ps <- points[1:i]
+    md.tmp <- update(md, data = df[-ps,])
+    r2 <- round(summary(md.tmp)$r.squared, digits = 5)
+    print(paste(r2, '------ remove outliers row', paste(ps, collapse = ', ')))
+  }
+}
+
+# outliers選擇依庫克距離大小排序
+outliersIndex <- function(md) {
+  inf.point <- influencePlot(md, id.n = 3, col = "red")
+  indices <- as.integer(row.names(inf.point)[order(inf.point$CookD, decreasing = T)])
+  indices
+}
+
+# step-by-step, 一次全部移除不是很好的作法, 一個一個移除,觀察improvement
+indices.naomit <- outliersIndex(lm.naomit.aov3)
+indices.simulate <- outliersIndex(lm.simulate.aov2)
+indices.mean <- outliersIndex(lm.mean.aov)
+
+Cars93_1.naomit.final <- Cars93_1.naomit[-indices.naomit, ]
+Cars93_1.simulate.final <- Cars93_1.simulate[-indices.simulate, ]
+Cars93_1.mean.final <- Cars93_1.mean[-indices.mean, ]
+
+lm.naomit.final <- update(lm.naomit.aov3, .~. , data = Cars93_1.naomit.final)
+lm.simulate.final <- update(lm.simulate.aov2, .~. , data = Cars93_1.simulate.final)
+lm.mean.final <- update(lm.mean.aov, .~. , data = Cars93_1.mean.final)
+#訓練/測試資料(80% vs 20%)
+set.seed(777)
+index <- sample(nrow(Cars93_1.mean.final), 0.8 * nrow(Cars93_1.mean.final))
+Cars93_train <- Cars93_1.mean.final[index, c('MPG.Overall', 'Price', 'EngineSize', 'Horsepower', 
+                                             'RPM', 'Rev.per.mile', 'Fuel.tank.capacity', 'Weight')]
+Cars93_test <- Cars93_1.mean.final[-index, c('MPG.Overall', 'Price', 'EngineSize', 'Horsepower',
+                                             'RPM', 'Rev.per.mile', 'Fuel.tank.capacity', 'Weight')]
+
+# Regularization(正則化)
+X <- as.matrix(Cars93_train[,-1])
+Y <- Cars93_train$MPG.Overall
+# alpha=1 is the lasso(最小絕對緊縮與選擇算子) penalty
+glmnet.fit <- glmnet(X, Y, alpha = 1)
+lambdas <- glmnet.fit$lambda
+
+# RMSE
+rmse <- function(a, b) {
+  return(sqrt(mean((a - b) ^ 2)))
+}
+# lda performance
+performance <- data.frame()
+for (lda in lambdas) {
+  performance <- rbind(performance,
+                       data.frame(Lambda = lda,
+                         RMSE = rmse(
+                           Cars93_test$MPG.Overall,
+                           predict(glmnet.fit, as.matrix(Cars93_test[,-1]), s = lda))))
+}
+# 最佳Lambda
+best.lambda <- with(performance, Lambda[which(RMSE == min(RMSE))])
+
+
+# 用所有資料(不含outliers) + best.lambda 擬合建模
+Cars93_final <- Cars93_1.mean.final[, c('MPG.Overall', 'Price', 'EngineSize', 'Horsepower', 
+                             'RPM', 'Rev.per.mile', 'Fuel.tank.capacity', 'Weight')]
+glmnet.fit.final <- glmnet(as.matrix(Cars93_final[,-1]), Cars93_final$MPG.Overall, alpha = 1)
+
+# set CV
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+# get best result
+getBest <- function(md)
+{
+  df <- md$results
+  index <- best(df, metric = "RMSE", maximize = TRUE)
+  best.df <- df[index,]
+  return(best.df)
+}
+
+# Get Parameter
+getModelInfo(model = "glmnet")$glmnet$parameters
+
+grid.glmnet <-expand.grid(alpha = 1, lambda = best.lambda)
+
+set.seed(777)
+model.glmnet <-
+  train(MPG.Overall ~ Price + EngineSize + Horsepower + 
+          RPM + Rev.per.mile + Fuel.tank.capacity + Weight,
+        data = Cars93_1.mean.final,
+        metric = "RMSE",
+        trControl = ctrl,
+        tuneGrid = grid.glmnet,
+        method = "glmnet"
+  )
+bestLda.glmnet <- getBest(model.glmnet)
+
+# 預設
+set.seed(777)
+model.glmnet <-
+  train(MPG.Overall ~ Price + EngineSize + Horsepower + 
+          RPM + Rev.per.mile + Fuel.tank.capacity + Weight,
+        data = Cars93_1.mean.final,
+        metric = "Rsquared",
+        trControl = ctrl,
+        method = "glmnet"
+  )
+default.glmnet <- getBest(model.glmnet)
+```
+
+* ### multiple linear regression analysis
+
+***
+
+    library(car)
+    library(mice)
+    library(gvlma)
+    library(glmnet)
+    library(caret)
+
+    car：迴歸應用套件
+    mice：資料模擬使用
+    gvlma：使用驗證模型假設
+    glmnet：正則化線性模型擬合套件
+    caret：整合分類與迴歸模型的強大訓練框架
+    
+***
+
+迴歸是預測分析方法之一，以下使用的資料集( Cars93_1.csv )來自 <a href="https://www.packtpub.com/big-data-and-business-intelligence/r-data-mining-blueprints" target="_blank">R Data Mining Blueprints</a> 書中，不過在流程上我做了一些調整，在 missing values 處理上，書中直接將出現 NA 值的欄位( Rear.seat.room, Luggage.room )移除，調整後的作法是欄位保留，對 NA 值進行三種比較處理( removing, simulating or mean )，另外，加入模型假設檢查、交叉驗證及 Regularization (正則化)，下圖是流程差異比較...
+
+![](image/adjustment.png)
+
+***
+
+原始資料 Cars93_1 結構如下，目標是利用這些 independent variables 進行每加侖里程數( MPG.Overall )的預測
+
+```{r, echo=FALSE}
+str(Cars93_1)
+```
+
+***
+
+1. #### __Missing values imputation__
+
+首先是 Missing Values 的處理，利用 mice 套件 md.pattern 方法，先過濾出哪些欄位有出現 NA 值。由以下報表可看出，Rear.seat.room 欄位出現 NA 值2次，Luggage.room 欄位出現11次，接著使用3種方法處理與比較
+
+```{r}
+# verify missing values
+md.pattern(Cars93_1)
+```
+
+方法A：刪除。將有出現 NA 值的資料直接 remove
+
+```{r, eval=FALSE}
+# remove
+Cars93_1.naomit <- subset(Cars93_1, Cars93_1$Rear.seat.room != complete.cases(Cars93_1$Rear.seat.room))
+Cars93_1.naomit <- subset(Cars93_1.naomit, Cars93_1.naomit$Luggage.room != complete.cases(Cars93_1.naomit$Luggage.room))
+# 同上
+#Cars93_1.naomit <- na.omit(Cars93_1)
+```
+
+方法B：模擬。利用 mice 套件方法進行資料模擬來替代 NA 值，這裡使用隨機森林、迭代5次的作法，下圖紅色線條是模擬數據，藍色是實際數據(若兩者差異太大，表示不可靠)
+
+```{r, eval=FALSE}
+# simulate
+set.seed(777)
+simulation <- mice(Cars93_1, method = "rf", maxit = 5, printFlag = F)
+densityplot(simulation)
+Cars93_1.simulate <- complete(simulation, action =1)
+```
+
+```{r, echo=FALSE}
+densityplot(simulation)
+```
+
+方法C：平均。用變數欄位的平均值來代替NA值
+
+```{r, eval=FALSE}
+# mean
+Cars93_1.mean <- Cars93_1
+Cars93_1.mean$Rear.seat.room[is.na(Cars93_1.mean$Rear.seat.room)] <-
+  mean(Cars93_1.mean$Rear.seat.room, na.rm = T)
+Cars93_1.mean$Luggage.room[is.na(Cars93_1.mean$Luggage.room)] <-
+  mean(Cars93_1.mean$Luggage.room, na.rm = T)
+```
+
+先用所有 independent variables 進行線性迴歸，初步了解比較一下這三種作法的R^2^值。方法A得到的R^2^為0.7533392，表示這個 model 可準確預測75.33%的輸入值，方法B和方法C得到的R^2^很相近，分別為0.7841793和0.783704，方法B的R^2^是三者中最高的，通常R^2^若大於0.8，可視為好的迴歸 model
+
+```{r, eval=FALSE}
+# multiple linear regression model(多元線性迴歸)
+lm.naomit <- lm(MPG.Overall ~ ., data = Cars93_1.naomit)
+lm.simulate <- lm(MPG.Overall ~ ., data = Cars93_1.simulate)
+lm.mean <- lm(MPG.Overall ~ ., data = Cars93_1.mean)
+
+summary(lm.naomit)$r.squared
+summary(lm.simulate)$r.squared
+summary(lm.mean)$r.squared
+```
+
+```{r, echo=FALSE}
+summary(lm.naomit)$r.squared
+summary(lm.simulate)$r.squared
+summary(lm.mean)$r.squared
+```
+
+***
+
+2. #### __Variable selection__
+
+當面臨眾多變數時，自動選擇是不錯的作法，step 語法可設定 forward, backward or both 方式，根據 Akaike Information Criteria (AIC, 赤池信息量準則)逐步產出適當的變數，直到 AIC 最小化即是最後的 model。此案例由於 independent variables 很少(只有13個)，這裡採用手動挑選的作法，根據 analysis of variance (ANOVA)查看每一個 independent variables 對 MPG.Overall 是否有顯著的貢獻，出現星號表示有，沒有出現星號的變數則不採用
+
+```{r}
+# analysis of variance (ANOVA)
+summary.aov(lm.naomit)
+lm.naomit.aov <-
+  update(lm.naomit, . ~ . - Length - Width - Turn.circle - Rear.seat.room - Luggage.room)
+
+summary.aov(lm.simulate)
+lm.simulate.aov <- 
+  update(lm.simulate, . ~ . - Length - Wheelbase - Width - Turn.circle - Rear.seat.room)
+
+summary.aov(lm.mean)
+lm.mean.aov <- 
+  update(lm.mean, . ~ . - Length - Wheelbase - Width - Turn.circle - Rear.seat.room - Luggage.room)
+```
+
+經由手動挑選 independent variables 進行線性迴歸所得的R^2^，由於 model 能判別的資訊減少了，因此普遍都下修了一點，方法A得到的R^2^為0.7433961，方法B和方法C分別為0.7663108、0.7570193，不過性能和準度本來就是一個權衡的過程，儘管R^2^略減一些，但三種作法分別減少了5個、5個及6個變數
+
+```{r, eval=FALSE}
+summary(lm.naomit.aov)$r.squared
+summary(lm.simulate.aov)$r.squared
+summary(lm.mean.aov)$r.squared
+```
+
+```{r, echo=FALSE}
+summary(lm.naomit.aov)$r.squared
+summary(lm.simulate.aov)$r.squared
+summary(lm.mean.aov)$r.squared
+```
+
+***
+
+3. #### __Multicollinearity minimum__
+
+線性迴歸的基本假設之一，independent variables 之間的相關性應為0或最小化。Variance Inflation Factor (VIF, 變異數膨脹因子)可用來判斷 multicollinearity (多重共線性)，VIF 值大於10表示有強烈可能是多重共線性， 作法上是從最大者開始刪除，一次刪一個，之後檢測、再重複執行，直到 VIF 值都小於10。利用 car 套件 vif 方法可進行檢測
+
+```{r}
+# 多重共線性最小化
+vif(lm.naomit.aov)
+lm.naomit.aov2 <- update(lm.naomit.aov, .~. -Weight)
+vif(lm.naomit.aov2)
+lm.naomit.aov3 <- update(lm.naomit.aov2, .~. -EngineSize)
+vif(lm.naomit.aov3)
+
+vif(lm.simulate.aov)
+lm.simulate.aov2 <- update(lm.simulate.aov, .~. -EngineSize)
+vif(lm.simulate.aov2)
+
+vif(lm.mean.aov)
+```
+
+經由 vif 檢測與調整，三種方法的 models 分別又再減少了2個、1個和0個變數。以上都是針對變數進行篩選調整，接下來針對干擾資料處理...
+
+***
+
+4. #### __Outlier treatment__
+
+干擾資料或離群值可能造成 model 結果的偏離，通常離群值被定義為超出1.5倍IQR(四分位差)範圍的數值。car 套件提供 influenceIndexPlot 視覺化方法，根據 Cook's distances, Studentized residuals ...繪出離群資料。以方法A的模型資料為例，標示點設為3個，各指標離群資料如下圖
+
+```{r}
+# Index Plots of the influence measures
+influenceIndexPlot(lm.naomit.aov3, id.n=3)
+```
+
+接著根據方法A、B和C的模型資料，分別將其離群資料一個一個移除並觀察R^2^的 improvement，整體而言，逐步刪除 outliers 有助於R^2^的提升，其中方法B和方法C的 model 經過這一連串的調整，R^2^已經提升至0.81和0.82以上(超越一開始的0.78)
+
+```{r}
+# remove outliers one-by-one and get R^2
+outliersRemovingCheck <- function(md, points) {
+  df <- md$model
+  for (i in 1:length(points)) {
+    ps <- points[1:i]
+    md.tmp <- update(md, data = df[-ps,])
+    r2 <- round(summary(md.tmp)$r.squared, digits = 5)
+    print(paste(r2, '------ remove outliers row', paste(ps, collapse = ', ')))
+  }
+}
+
+# outliers選擇依庫克距離大小排序
+outliersIndex <- function(md) {
+  inf.point <- influencePlot(md, id.n = 3, col = "red")
+  indices <- as.integer(row.names(inf.point)[order(inf.point$CookD, decreasing = T)])
+  indices
+}
+
+# one-by-one remove outliers and check R^2
+indices.naomit <- outliersIndex(lm.naomit.aov3)
+outliersRemovingCheck(lm.naomit.aov3, indices.naomit)
+
+indices.simulate <- outliersIndex(lm.simulate.aov2)
+outliersRemovingCheck(lm.simulate.aov2, indices.simulate)
+
+indices.mean <- outliersIndex(lm.mean.aov)
+outliersRemovingCheck(lm.mean.aov, indices.mean)
+```
+
+根據以上的 improvement，刪除各模型資料的離群值並 update models，更新後方法A模型的R^2^為0.7021103，方法B模型R^2^為0.8127756，方法C模型R^2^為0.8226459，可見方法A直接刪除 NA 值資料的作法不是很好，方法B和方法C的結果比較相近，不過方法C使用平均值來代替 NA 的作法，在此案例資料的表現上R^2^是最高的
+
+```{r, eval=FALSE}
+# 刪除outliers and update models
+Cars93_1.naomit.final <- Cars93_1.naomit[-indices.naomit, ]
+Cars93_1.simulate.final <- Cars93_1.simulate[-indices.simulate, ]
+Cars93_1.mean.final <- Cars93_1.mean[-indices.mean, ]
+
+lm.naomit.final <- update(lm.naomit.aov3, .~. , data = Cars93_1.naomit.final)
+lm.simulate.final <- update(lm.simulate.aov2, .~. , data = Cars93_1.simulate.final)
+lm.mean.final <- update(lm.mean.aov, .~. , data = Cars93_1.mean.final)
+
+summary(lm.naomit.final)$r.squared
+summary(lm.simulate.final)$r.squared
+summary(lm.mean.final)$r.squared
+```
+
+```{r, echo=FALSE}
+summary(lm.naomit.final)$r.squared
+summary(lm.simulate.final)$r.squared
+summary(lm.mean.final)$r.squared
+```
+
+***
+
+5. #### __Model assumptions check__
+
+線性迴歸的基本假設，除了之前提的 multicollinearity (多重共線性)最小化，殘差也應服從常態分配...等，car 套件的 qqPlot 方法可幫助檢視殘差分佈，資料點如果都落在對角線上，表示資料呈現完美的常態分配，透過繪製的Q-Q圖( Quantile-Quantile )可看出，方法B和方法C的 model 表現比較好
+
+```{r, echo=FALSE}
+par(mfrow = c(1, 3))
+m1 <- qqPlot(lm.naomit.final, id.n = 3, main='lm.naomit.final \n(方法A)')
+m2 <- qqPlot(lm.simulate.final, id.n = 3, main='lm.simulate.final \n(方法B)')
+m3 <- qqPlot(lm.mean.final, id.n = 3, main='lm.mean.final \n(方法C)')
+```
+
+此外，gvlma 套件方法也提供快速驗證假設，以本次實驗結果R^2^最佳之方法C的 model 為例，5項假設中有1項假設( Link Function )沒有被滿足，後續還能再 tuning (如果目標是做出好的預測要盡力滿足假設)，即使如此，方法C迴歸模型的係數和R^2^還是具有意義
+
+```{r}
+# 驗證模型假設, 以方法C的model為例
+gvlma(lm.mean.final)
+```
+
+***
+
+6. #### __Cross-validation / Regularization__
+
+到目前為止，方法C的 model 使用變數和資料已經得到，為了避免 overfitting，接下來採用交叉驗證 ( cross-validation, CV )和正則化( Regularization, 同時考慮擬合準確度和模型複雜度)，交叉驗證採用隨機抽樣8:2的訓練/測試資料，正則化使用 glmnet 套件方法，依最小RMSE找出最佳超參數lambda
+
+```{r, eval=FALSE}
+#訓練/測試資料(80% vs 20%)
+set.seed(777)
+index <- sample(nrow(Cars93_1.mean.final), 0.8 * nrow(Cars93_1.mean.final))
+Cars93_train <- Cars93_1.mean.final[index, c('MPG.Overall', 'Price', 'EngineSize', 'Horsepower', 
+                                             'RPM', 'Rev.per.mile', 'Fuel.tank.capacity', 'Weight')]
+Cars93_test <- Cars93_1.mean.final[-index, c('MPG.Overall', 'Price', 'EngineSize', 'Horsepower',
+                                             'RPM', 'Rev.per.mile', 'Fuel.tank.capacity', 'Weight')]
+X <- as.matrix(Cars93_train[,-1])
+Y <- Cars93_train$MPG.Overall
+
+# Regularization(正則化)
+# alpha=1 is the lasso(最小絕對緊縮與選擇算子) penalty
+glmnet.fit <- glmnet(X, Y, alpha = 1)
+lambdas <- glmnet.fit$lambda
+
+# RMSE
+rmse <- function(a, b) {
+  return(sqrt(mean((a - b) ^ 2)))
+}
+# lda performance
+performance <- data.frame()
+for (lda in lambdas) {
+  performance <- rbind(performance,
+                       data.frame(Lambda = lda,
+                         RMSE = rmse(
+                           Cars93_test$MPG.Overall,
+                           predict(glmnet.fit, as.matrix(Cars93_test[,-1]), s = lda))))
+}
+# 最佳Lambda
+best.lambda <- with(performance, Lambda[which(RMSE == min(RMSE))])
+```
+
+最佳超參數，當 Lambda = 0.1294082 時有最小 RMSE
+
+```{r, echo=FALSE}
+# 繪圖
+suppressWarnings(
+  ggplot(performance, aes(x = Lambda, y = RMSE)) +
+    geom_point() +
+    geom_line() +
+    geom_vline(xintercept = best.lambda, color = 'royalblue', linetype = "dotdash") +
+    geom_text(aes(label = with(performance, ifelse(RMSE == min(RMSE), best.lambda, NA))),
+              size = 3.5, colour = 'royalblue', nudge_x = 0.4, nudge_y = -0.2, 
+              fontface = "bold", na.rm = T))
+```
+
+使用最佳 Lambda 值(0.1294082)正則化建立最後的模型，有2變數( EngineSize 和 Horsepower )的係數為0，代表模型複雜度簡化又能保有準確性
+
+```{r}
+# 正則化, 用 best.lambda 擬合建模
+Cars93_final <- Cars93_1.mean.final[, c('MPG.Overall', 'Price', 'EngineSize', 'Horsepower', 
+                             'RPM', 'Rev.per.mile', 'Fuel.tank.capacity', 'Weight')]
+glmnet.fit.final <- glmnet(as.matrix(Cars93_final[,-1]), Cars93_final$MPG.Overall, alpha = 1)
+coef(glmnet.fit.final, s = best.lambda)
+```
+
+***
+
+caret 套件也有支援 glmnet，可利用來查看最後模型的 performance，順便驗證一下使用最佳 Lambda 超參數的RMSE表現是否有比預設來的好，從下表的結果看起來的確是如此，不過R^2^表現上預設值較佳。anyway， 經由這一連串流程處理，比較了三種方法建模的差異，成功產出最後模型，不但簡化了複雜度也讓提升R^2^(大於0.8)
+
+```{r, echo=FALSE}
+kable(default.glmnet)
+```
+
+```{r, echo=FALSE}
+kable(bestLda.glmnet)
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Linear regression
+    + #### Variable selection
+    + #### Multicollinearity
+    + #### Regularization

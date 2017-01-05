@@ -16,6 +16,8 @@ Welcome to practice in R, the personal website for Koson Wu. I am a beginner, an
 
 This is the start of my own journey learning R.
 
-![](image/me.jpg)
+### bergter@gmail.com
+
+![](image/me2017.jpg)
 
 
