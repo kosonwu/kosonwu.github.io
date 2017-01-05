@@ -184,13 +184,13 @@ default.glmnet <- getBest(model.glmnet)
     
 ***
 
-迴歸是預測分析方法之一，以下使用的資料集( Cars93_1.csv )來自 <a href="https://www.packtpub.com/big-data-and-business-intelligence/r-data-mining-blueprints" target="_blank">R Data Mining Blueprints</a> 書中，不過在流程上我做了一些調整，在 missing values 處理上，書中直接將出現 NA 值的欄位( Rear.seat.room, Luggage.room )移除，調整後的作法是欄位保留，對 NA 值進行三種比較處理( removing, simulating or mean )，另外，加入模型假設檢查、交叉驗證及 Regularization (正則化)，下圖是流程差異比較...
+迴歸是預測分析方法之一，以下使用的資料集( Cars93_1.csv )來自 <a href="https://www.packtpub.com/big-data-and-business-intelligence/r-data-mining-blueprints" target="_blank">R Data Mining Blueprints</a> 書中，不過在流程上我做了一些調整，在 missing values 處理上，書中直接將出現 NA 值的欄位( Rear.seat.room, Luggage.room )移除，調整後的作法是欄位保留，對 NA 值進行三種比較處理( removing, simulating and mean )，另外，加入模型假設檢查、交叉驗證及 Regularization (正則化)，下圖是流程差異比較...
 
 ![](image/adjustment.png)
 
 ***
 
-原始資料 Cars93_1 結構如下，目標是利用這些 independent variables 進行每加侖里程數( MPG.Overall )的預測
+Cars93_1 是有關汽車規格相關資訊，資料筆數與結構如下，目標是利用這些 independent variables 進行 MPG.Overall (每加侖里程數) 的預測
 
 ```{r, echo=FALSE}
 str(Cars93_1)
@@ -207,7 +207,7 @@ str(Cars93_1)
 md.pattern(Cars93_1)
 ```
 
-方法A：刪除。將有出現 NA 值的資料直接 remove
+方法A：刪除。將有出現 NA 值的資料筆數直接 remove
 
 ```{r, eval=FALSE}
 # remove
@@ -217,7 +217,7 @@ Cars93_1.naomit <- subset(Cars93_1.naomit, Cars93_1.naomit$Luggage.room != compl
 #Cars93_1.naomit <- na.omit(Cars93_1)
 ```
 
-方法B：模擬。利用 mice 套件方法進行資料模擬來替代 NA 值，這裡使用隨機森林、迭代5次的作法，下圖紅色線條是模擬數據，藍色是實際數據(若兩者差異太大，表示不可靠)
+方法B：模擬。利用 mice 套件方法進行資料模擬來代替 NA 值，這裡使用隨機森林、迭代5次的作法，下圖紅色線條是模擬數據，藍色是實際數據(若兩者差異太大，表示不可靠)
 
 ```{r, eval=FALSE}
 # simulate
@@ -242,7 +242,7 @@ Cars93_1.mean$Luggage.room[is.na(Cars93_1.mean$Luggage.room)] <-
   mean(Cars93_1.mean$Luggage.room, na.rm = T)
 ```
 
-先用所有 independent variables 進行線性迴歸，初步了解比較一下這三種作法的R^2^值。方法A得到的R^2^為0.7533392，表示這個 model 可準確預測75.33%的輸入值，方法B和方法C得到的R^2^很相近，分別為0.7841793和0.783704，方法B的R^2^是三者中最高的，通常R^2^若大於0.8，可視為好的迴歸 model
+首先使用所有 independent variables 進行線性迴歸，初步了解比較一下這三種作法的R^2^值。方法A得到的R^2^為0.7533392，表示這個 model 可準確預測75.33%的輸入值，方法B和方法C得到的R^2^很相近，分別為0.7841793和0.783704，方法B的R^2^是三者中最高的，通常R^2^若大於0.8，可視為好的迴歸 model
 
 ```{r, eval=FALSE}
 # multiple linear regression model(多元線性迴歸)
@@ -265,7 +265,7 @@ summary(lm.mean)$r.squared
 
 2. #### __Variable selection__
 
-當面臨眾多變數時，自動選擇是不錯的作法，step 語法可設定 forward, backward or both 方式，根據 Akaike Information Criteria (AIC, 赤池信息量準則)逐步產出適當的變數，直到 AIC 最小化即是最後的 model。此案例由於 independent variables 很少(只有13個)，這裡採用手動挑選的作法，根據 analysis of variance (ANOVA)查看每一個 independent variables 對 MPG.Overall 是否有顯著的貢獻，出現星號表示有，沒有出現星號的變數則不採用
+在面臨眾多變數時，自動選擇是不錯的作法，step 語法可設定 forward, backward or both 方式，根據 Akaike Information Criteria (AIC, 赤池信息量準則)逐步產出適當的變數，直到 AIC 最小化即是最後的 model。不過，由於此案例的 independent variables 很少(只有13個)，這裡採用手動挑選的作法，根據 analysis of variance (ANOVA)查看每一個 independent variables 對 MPG.Overall 是否有顯著的貢獻，出現星號表示有，沒有出現星號的變數則不採用
 
 ```{r}
 # analysis of variance (ANOVA)
@@ -470,7 +470,7 @@ coef(glmnet.fit.final, s = best.lambda)
 
 ***
 
-caret 套件也有支援 glmnet，可利用來查看最後模型的 performance，順便驗證一下使用最佳 Lambda 超參數的RMSE表現是否有比預設來的好，從下表的結果看起來的確是如此，不過R^2^表現上預設值較佳。anyway， 經由這一連串流程處理，比較了三種方法建模的差異，成功產出最後模型，不但簡化了複雜度也讓提升R^2^(大於0.8)
+caret 套件也有支援 glmnet，可利用來查看最後模型的 performance，順便驗證一下使用最佳 Lambda 超參數的RMSE表現是否有比預設來的好，從下表的結果看起來的確是如此，不過R^2^表現上預設值較佳。anyway， 經由這一連串流程處理，比較了三種方法建模的差異，成功產出最後模型，不但簡化了 model 複雜度(變數由13個降至5個)也改善了R^2^(由0.783704提升至0.8162456)
 
 ```{r, echo=FALSE}
 kable(default.glmnet)
