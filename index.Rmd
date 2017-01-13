@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [logistic regression with Artpiece data](./logisticRegression.html) --- 
+glm 邏輯迴歸分析.
+( *2017-01-13* )
+
 * [multiple linear regression analysis](./linearRegression.html) --- 
 多元線性迴歸分析.
 ( *2017-01-05* )

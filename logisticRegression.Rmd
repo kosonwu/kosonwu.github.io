@@ -1,0 +1,213 @@
+---
+title: ''
+date: "2017-01-13"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(Hmisc)
+library(mice)
+library(car)
+library(caret)
+library(ROCR)
+
+Artpiece <- read.csv(file.path("data", "Artpiece.csv"), stringsAsFactors = FALSE)
+set.seed(777)
+simulation <- mice(Artpiece, method = "pmm", printFlag = F)
+Artpiece.simulate <- complete(simulation, action =1)
+Artpiece.simulate$IsGood.Purchase <- as.factor(Artpiece.simulate$IsGood.Purchase)
+Artpiece.simulate$Is.It.Online.Sale <- as.factor(Artpiece.simulate$Is.It.Online.Sale)
+set.seed(777)
+folds <- createFolds(Artpiece.simulate$IsGood.Purchase, k = 10)
+cv_results <- lapply(folds, function(x) {
+  train_data <- Artpiece.simulate[-x, ]
+  test_data <- Artpiece.simulate[x, ]
+  glm.fit <- glm(IsGood.Purchase ~ ., data = train_data, family = binomial(link = "logit"))
+  pred_data <- ifelse(predict(glm.fit, newdata = test_data, type = 'response') > 0.5,'Y','N')
+  actual_data <- test_data$IsGood.Purchase
+  acc_tb <-  table(actual_data, pred_data)
+  acc <- (acc_tb[1, 1] + acc_tb[2, 2]) / sum(acc_tb)
+  return(acc)
+})
+# set CV
+ctrl <- trainControl(method = "cv", number = 10)
+# get best result
+getBest <- function(md)
+{
+  df <- md$results
+  index <- best(df, metric = "Accuracy", maximize = TRUE)
+  best.df <- df[index,]
+  return(best.df)
+}
+# caret glm cv
+set.seed(777)
+model.glm <- train(IsGood.Purchase ~ ., data = Artpiece.simulate, metric = "Accuracy", 
+                   family = binomial, trControl = ctrl, method = "glm")
+```
+
+* ### logistic regression with Artpiece data
+
+***
+
+    library(Hmisc)
+    library(mice)
+    library(car)
+    library(caret)
+    library(ROCR)
+
+    Hmisc：實用工具套件
+    mice：資料模擬使用
+    car：迴歸應用套件
+    caret：整合分類與迴歸模型的強大訓練框架
+    ROCR：ROC曲線可視化工具
+    
+***
+
+邏輯迴歸( logistic regression )預測物件屬於兩個類別中的哪一個，這樣的情境在現實生活中滿常見的，以下練習使用的資料集( Artpiece.csv )也是來自 <a href="https://www.packtpub.com/big-data-and-business-intelligence/r-data-mining-blueprints" target="_blank">R Data Mining Blueprints</a> 書中，主要的目的是預測會不會購買( IsGood.Purchase 欄位)，流程處理上大致相同，不過我加入一些調整及套件的應用，包括 Missing values 處理、交叉驗證及 ROC 曲線等...Artpiece 資料筆數與結構如下:
+
+```{r, echo=FALSE}
+str(Artpiece)
+```
+
+***
+
+1. #### __Missing values imputation__
+
+先利用 Hmisc 套件 describe 方法，查看每個變數的簡易統計及 NA 值情形，其中 CurrentAuctionAveragePrice 欄位有315筆 missing values
+
+```{r, echo=FALSE}
+# 簡明統計描述
+describe(Artpiece)
+```
+
+初步了解一下 IsGood.Purchase 資料分佈，類別為 0 (不會購買) 佔了約 87.7 %，類別為 1 的只有 12.3 %。如果 CurrentAuctionAveragePrice 是 NA 而且 IsGood.Purchase 為 1 者，佔其中約 `r with(Artpiece, sum(IsGood.Purchase==1 & is.na(CurrentAuctionAveragePrice)) / sum(IsGood.Purchase==1))*100` %左右，雖然比例很小、可直接 remove ，不過這裡選擇用 simulate
+
+```{r}
+# 類別資料分佈
+prop.table(table(Artpiece$IsGood.Purchase))
+```
+
+接著，利用 mice 套件方法進行模擬，本次使用 pmm (predictive mean matching)，模擬情形如下
+
+```{r, echo=FALSE}
+densityplot(simulation)
+```
+
+***
+
+2. #### __Multicollinearity minimum & Variable selection__
+
+處理完 missing values，接下來針對變數的多重共線性，使用 car 套件的 vif 方法，從結果看來沒有 multicollinearity 問題
+
+```{r}
+model.ini <- glm(IsGood.Purchase ~ ., data = Artpiece.simulate, family = binomial(link = "logit"))
+# check multicollinearity
+vif(model.ini)
+```
+
+在 variable selection 的部份，這次採用自動方式來篩選，從結果看來保留了所有變數(表示減少變數對 AIC 沒有助益)
+
+```{r}
+# auto detection of model
+fit_step <- step(model.ini, direction = "both")
+```
+
+卡方檢定也能幫助了解需不需要增刪變數，查看一下 independent variables 依續加入 model 是否有助於殘差的減少，從這結果看來變數不需刪減
+
+```{r}
+# chi-square test statistics
+anova(fit_step, test = "Chisq")
+```
+
+初步 model 預測值分佈情形如下
+
+```{r, echo=FALSE}
+par(bg="grey95", mai=rep(0.9,4))
+plot(fit_step$fitted.values, col = "royalblue")
+```
+
+***
+
+3. #### __Cross-validation__
+
+資料和變數 ready 好了，接下來使用 glm 的邏輯迴歸，採用 10 fold CV 進行 accuracy 檢測
+
+```{r, eval=FALSE}
+# glm cv
+set.seed(777)
+folds <- createFolds(Artpiece.simulate$IsGood.Purchase, k = 10)
+cv_results <- lapply(folds, function(x) {
+  train_data <- Artpiece.simulate[-x, ]
+  test_data <- Artpiece.simulate[x, ]
+  glm.fit <- glm(IsGood.Purchase ~ ., data = train_data, family = binomial(link = "logit"))
+  pred_data <- ifelse(predict(glm.fit, newdata = test_data, type = 'response') > 0.5, 'Y', 'N')
+  actual_data <- test_data$IsGood.Purchase
+  acc_tb <-  table(actual_data, pred_data)
+  acc <- (acc_tb[1, 1] + acc_tb[2, 2]) / sum(acc_tb)
+  return(acc)
+})
+```
+
+結果如下，平均 accuracy 為 `r mean(unlist(cv_results))`
+
+```{r, echo=FALSE}
+str(cv_results)
+```
+
+caret 套件也有支援 glm，執行結果相同
+
+```{r, eval=FALSE}
+# caret glm cv
+set.seed(777)
+model.glm <- train(IsGood.Purchase ~ ., data = Artpiece.simulate, metric = "Accuracy", 
+                   family = binomial, trControl = ctrl, method = "glm")
+getBest(model.glm)
+
+```
+
+```{r, echo=FALSE}
+kable(getBest(model.glm))
+```
+
+***
+
+4. #### __ROC curve__
+
+model 建立後的預測機率可用來產出 ROC curve，它被用來權衡 true positives (TP) 和 false positives (FP) 間的檢測、了解機器學習 model 的功效，由於 ROCR 套件支援參數及可視化我比較習慣，因此採用這個套件來處理，其他如 pROC 套件也有類似功能。 從下圖看來，如果要正確識別都達到機率 0.7 的話要面臨 0.4 左右的誤判
+
+```{r}
+# ROC
+pred <- prediction(predictions = model.glm$finalModel$fitted.values,
+                   labels = Artpiece.simulate$IsGood.Purchase)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, col = "blue", lwd = 3, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), 
+     main = "ROC curve for IsGood.Purchase")
+abline(a = 0, b = 1, lwd = 2, lty = 2)
+```
+
+AUC (area under the ROC curve) 是計算 ROC curve 以下的面積。兩條 ROC curves 可能有相同的 AUC，為避免對 AUC 值的誤解，通常搭配 ROC 一起解讀。AUC 值參考意義如下，從本次執行結果來看，只能算是普通
+
+Grades            | AUC Scores 
+----------------- | ------------- 
+Outstanding       | 0.9 ~ 1.0        
+Excellent         | 0.8 ~ 0.9    
+Acceptable        | 0.7 ~ 0.8        
+Poor              | 0.6 ~ 0.7
+No discrimination | 0.5 ~ 0.6        
+
+```{r}
+#計算AUC面積
+perf.auc <- performance(pred, "auc")
+perf.auc@y.values[[1]]
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Logistic regression
+    + #### ROC curve / area under the ROC curve (AUC)
