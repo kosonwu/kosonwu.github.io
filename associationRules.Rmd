@@ -1,0 +1,205 @@
+---
+title: ''
+date: "2017-01-18"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(arules)
+library(arulesViz)
+library(ggplot2)
+data(Groceries)
+
+set.seed(777)
+support <- seq(0.0056, 0.025, length.out = 10)
+rules.count <- sapply(support, function(s) {
+  count <- length(apriori(Groceries, parameter = list(supp = s, conf = 0.25)))
+})
+count.df <- as.data.frame(cbind(support, confidence = 0.25, rules.count))
+
+rules <- apriori(Groceries, parameter = list(supp = 0.014222222, conf = 0.25, minlen=2))
+rules <- sort(rules, decreasing = T, by = "confidence")
+# filter lift < 1 的 rules
+rules <- subset(rules, lift > 1)
+
+rules.yogurt <- apriori(Groceries, parameter = list(supp = 0.014222222, conf = 0.25, minlen=2),
+                        appearance = list(lhs = c("yogurt"), default = "rhs"))
+```
+
+* ### exploring association rules with Apriori
+
+***
+
+    library(arules)
+    library(arulesViz)
+    library(ggplot2)
+
+    arules：Association Rules 套件工具
+    arulesViz：Association Rules 可視化工具
+    ggplot2：繪圖及空間可視化
+    
+***
+
+關聯規則( Association Rules )的目的是探究項目與項目之間的關係，項目可以是商店裡的物品、也可以是句中使用的單字，適用於批量購買或一系列的交易分析，也稱 MBA ( Market Basket Analysis )。關聯規則在使用上有一些前提條件，ex: 所有的資料必須是 categorical (連續資料必須先離散化)、最小化 sparsity 等，以下使用的 Groceries 資料集來自 arules 套件中，資料前處理已經 ready，本次練習的目的是從交易資料中了解購買行為、找出規則( rules )，例如購買 A 之後可能會買什麼? 購買 A 之前已買了什麼? Groceries 資料集概述如下，包括 9835 筆交易資料、169 種品項、稀疏值( sparsity ) 2.61 %，前 5 種最常被購買的物品、有 1 筆最多購買 32 種物品紀錄...
+
+***
+
+```{r, echo=FALSE}
+summary(Groceries)
+```
+
+***
+
+* 關聯規則主要包含三個重要概念:
+    1. Support: itemset 在 data 出現的頻率‧support(x) = count(x) / N
+    2. Confidence: 表示 rule 強度， (x -> y) 在 x 中的比例‧confidence(x -> y) = support(x,y) / support(x)
+    3. Lift: 解釋 rule 中 items 之間的關聯，通常 Lift 值大於 1 才具關聯‧lift(x -> y) = support(x,y) / support(x) * support(y)
+
+EDA，前3筆交易資訊
+
+```{r}
+inspect(Groceries[1:3])
+```
+
+***
+
+support > 0.1 的items 有 8 樣
+
+```{r}
+#Support: itemset在data出現的頻率.support(x)=count(x)/N
+itemFrequencyPlot(Groceries, support = 0.1)
+```
+
+***
+
+前20項items，support 值最高為 whole milk
+
+```{r}
+itemFrequencyPlot(Groceries, topN = 20)
+```
+
+***
+
+前10筆交易可視化
+
+```{r}
+#Visualizing transaction data (sparse matrix)
+image(Groceries[1:10])
+```
+
+***
+
+隨抽100筆交易可視化
+
+```{r}
+#especially powerful if the items were also sorted into categories
+#sample for extremely large transaction databases
+image(sample(Groceries, 100))
+```
+
+***
+
+rules 的決定來自 support 和 confidence 之間的權衡，為了避免產生過多、不重要的 rules，先了解 items 的 support 值，由於有 169 個 items，這裡使用的策略是參考前 1/3 (第56筆)、2/3 (第113筆)的support 值(relative)
+
+```{r}
+# items的相對比例(support)和絕對次數(count)
+items.df <- data.frame(items = names(itemFrequency(Groceries, type = "relative")),
+                       relative = itemFrequency(Groceries, type = "relative"),
+                       absolute = itemFrequency(Groceries, type = "absolute"),
+                       row.names = NULL)
+# 排序, 第56, 113筆資料
+items.df[order(items.df$relative, decreasing = T),][56,]
+items.df[order(items.df$relative, decreasing = T),][113,]
+```
+
+***
+
+接著，以上述的 support 值為起迄(0.0056 至 0.025)，confidence 值固定為 0.25，細分 10 次執行，查看產生的 rules 數(如下圖)，自訂門檻值為 < 100，因此 support 將設為 0.014222222
+
+```{r, echo=FALSE}
+ggplot(count.df, aes(support, rules.count)) + 
+  geom_line(size = 1 ,col ='royalblue') + geom_point() + 
+  geom_text(aes(label = rules.count),size = 3.5, fontface = "bold", vjust = -1) +
+  scale_x_continuous(breaks = support) +
+  ggtitle("Number of rules at different support") +
+  theme(axis.text.x = element_text(angle = 45)) 
+
+```
+
+***
+
+進行 apriori 演算產生 rules，取 lift > 1 者，共得到 87 條 rules，itemset = 2 種的有 66 條，itemset 為 3 的有 21 條，前 10 條 rules 如下
+
+```{r, eval=FALSE}
+rules <- apriori(Groceries, parameter = list(supp = 0.014222222, conf = 0.25, minlen=2))
+rules <- sort(rules, decreasing = T, by = "confidence")
+# filter lift < 1 的 rules
+rules <- subset(rules, lift > 1)
+```
+
+```{r, echo=FALSE}
+summary(rules)@lengths
+inspect(head(rules, 10))
+```
+
+***
+
+利用 arulesViz 套件將 rules 可視化，support 越大、圓圈越大，lift 越大、顏色越深，從下圖可發現 RHS 為根類疏菜( root vegetables )和 beef、other vegetables 等具有關聯
+
+```{r, echo=FALSE}
+set.seed(777)
+plot(rules, method = "grouped", control = list(col=blues9[order(blues9)]))
+```
+
+回應一開始的問題，ex: 查看買根類疏菜( root vegetables )之前會買什麼?
+
+```{r}
+inspect(subset(rules, rhs %in% 'root vegetables'))
+```
+
+***
+
+另一種圖解可視化，可幫助了解 items 間依序關係
+
+```{r, echo=FALSE}
+plot(rules, method = 'graph', 
+     control = list(nodeCol = blues9[order(blues9)], edgeCol = grey(.7), alpha = 1, arrowSize=.3))
+```
+
+另一個問題，例如只購買優格( yogurt )的人會再買什麼?
+
+```{r, eval=FALSE}
+rules.yogurt <- apriori(Groceries, parameter = list(supp = 0.014222222, conf = 0.25, minlen=2),
+                        appearance = list(lhs = c("yogurt"), default = "rhs"))
+inspect(rules.yogurt)
+```
+
+```{r, echo=FALSE}
+inspect(rules.yogurt)
+```
+
+或者，有買優格( yogurt )的人會再買什麼?
+
+```{r}
+inspect(subset(rules, lhs %ain% "yogurt"))
+```
+
+透過以上 association rules 產出 rules 可幫助了解 items 交叉購買之間的關係，不過有時 support 和 confidence 值高不一定是有用的 rules...此外，support 和 confidence 制訂也是主觀的，視不同資料集和目的來決定。最後產出的 rules，可以透過以下指令轉成 dataframe 或 export 檔案加以利用
+
+```{r, eval=FALSE}
+#轉成data.frame
+df.groceryrules <- as(rules, "data.frame")
+#匯成檔案
+write(sort(rules, by = "lift"), file = "rules_grocery.csv", sep = ",", quote = TRUE, row.names = FALSE)
+
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Association Rules with Apriori ( Market Basket Analysis )
+    

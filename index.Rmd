@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [exploring association rules with Apriori](./associationRules.html) --- 
+運用 Apriori 產生關聯規則.
+( *2017-01-18* )
+
 * [logistic regression with Artpiece data](./logisticRegression.html) --- 
 glm 邏輯迴歸分析.
 ( *2017-01-13* )
