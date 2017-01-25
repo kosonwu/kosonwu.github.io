@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [thematic maps of Kaohsiung city public bike](./kaoCityBike.html) --- 
+利用 tmap 套件產出主題地圖 - 以高雄市公共腳踏車為例.
+( *2017-01-25* )
+
 * [exploring association rules with Apriori](./associationRules.html) --- 
 運用 Apriori 產生關聯規則.
 ( *2017-01-18* )
