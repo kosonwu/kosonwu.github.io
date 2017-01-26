@@ -44,7 +44,7 @@ rules.yogurt <- apriori(Groceries, parameter = list(supp = 0.014222222, conf = 0
     
 ***
 
-關聯規則( Association Rules )的目的是探究項目與項目之間的關係，項目可以是商店裡的物品、也可以是句中使用的單字，適用於批量購買或一系列的交易分析，也稱 MBA ( Market Basket Analysis )。關聯規則在使用上有一些前提條件，ex: 所有的資料必須是 categorical (連續資料必須先離散化)、最小化 sparsity 等，以下使用的 Groceries 資料集來自 arules 套件中，資料前處理已經 ready，本次練習的目的是從交易資料中了解購買行為、找出規則( rules )，例如購買 A 之後可能會買什麼? 購買 A 之前已買了什麼? Groceries 資料集概述如下，包括 9835 筆交易資料、169 種品項、稀疏值( sparsity ) 2.61 %，前 5 種最常被購買的物品、有 1 筆最多購買 32 種物品紀錄...
+關聯規則( Association Rules )的目的是探究項目與項目之間的關係，項目可以是商店裡的物品、也可以是句中使用的單字，適用於批量購買或一系列的交易分析，也稱 MBA ( Market Basket Analysis )。關聯規則在使用上有一些前提條件，所有的資料必須是 categorical、最小化 sparsity 等，前者可透過 cut 或 discretize 方法將連續資料離散化、後者可用 pruning 方式( support-based or confidence-based )，以下使用的 Groceries 資料集來自 arules 套件中，資料前處理已經 ready，本次練習的目的是從交易資料中了解購買行為、找出規則( rules )，例如購買 A 之後可能會買什麼? 購買 A 之前已買了什麼? Groceries 資料集概述如下，包括 9835 筆交易資料、169 種品項、稀疏值( sparsity ) 2.61 %，前 5 種最常被購買的物品、有 1 筆最多購買 32 種物品紀錄...
 
 ***
 
