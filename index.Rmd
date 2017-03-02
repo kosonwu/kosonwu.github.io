@@ -14,6 +14,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [text classiﬁcation in opinion mining of the website](./stspMailService.html) --- 
+文本分類應用 - 以網站意見信箱為例.
+( *2017-03-03* )
+
+***
+
+> __PREVIOUS__
+
 * [thematic maps of Kaohsiung city public bike](./kaoCityBike.html) --- 
 利用 tmap 套件產出主題地圖 - 以高雄市公共腳踏車為例.
 ( *2017-01-25* )
@@ -29,10 +37,6 @@ glm 邏輯迴歸分析.
 * [multiple linear regression analysis](./linearRegression.html) --- 
 多元線性迴歸分析.
 ( *2017-01-05* )
-
-***
-
-> __PREVIOUS__
 
 * [data exploration with SparkR 2.0.2](./exerciseSparkR.html) --- 
 使用 SparkR 2.0.2 進行數據探索.

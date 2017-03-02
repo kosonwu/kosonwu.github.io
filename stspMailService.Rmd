@@ -1,0 +1,414 @@
+---
+title: ''
+date: "2017-03-03"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(jiebaR)
+library(tm)
+library(rio)
+library(dplyr)
+library(caret)
+library(doSNOW)
+library(wordcloud)
+# 載入
+# 讀檔
+stsp <- import(file.path("data", "stsp", "opinions_dept.xls"))[,3:4]
+#Clean Text
+stsp[,1] <- tolower(stsp[,1])
+stsp[,1] <- gsub('南科網站《contact us》訪客來信', '', stsp[,1])
+stsp[,1] <- gsub('re:','', stsp[,1])
+stsp[,1] <- gsub('re：', '', stsp[,1])
+stsp[,1] <- gsub('update:','', stsp[,1])
+stsp[,1] <- gsub('回覆+', '', stsp[,1])
+stsp[,1] <- gsub('回复+', '', stsp[,1])
+stsp[,1] <- gsub(':', '', stsp[,1])
+stsp[,1] <- gsub('：', '', stsp[,1])
+
+stsp[,1] <- gsub("[A-Za-z0-9]", "", stsp[,1])
+stsp[,1] <- gsub("[[:punct:]]", " ", stsp[,1])
+stsp[,1] <- gsub("^\\s+|\\s+$", "", stsp[,1])
+
+stsp <- stsp[(stsp[,2])!='',]
+stsp <- stsp[(stsp[,1])!='',]
+stsp <- stsp[!is.na(stsp[,2]),]
+stsp <- stsp[!is.na(stsp[,1]),]
+
+# 改欄位名稱
+colnames(stsp) <- c('op','dept')
+
+stsp <- distinct(stsp)
+#stsp <- arrange(stsp, dept, op)
+
+table(as.factor(stsp$dept))
+
+stsp <- stsp[stsp$dept %in% c('建管組','營建組','環安組'),]
+rownames(stsp) <- c(1:nrow(stsp))
+
+stsp.ini <- stsp
+
+# JiebaR斷詞
+mixseg <- worker()
+stsp$opseg <- sapply(stsp$op, function(i) {
+  paste(segment(i, mixseg), collapse = " ")
+})
+
+#停用字
+myStop <- readLines(file.path("data", "stsp","myStopword.txt"), encoding = "UTF-8")
+myStop <- gsub("^\\s+|\\s+$", "", myStop)
+
+#建立文本
+corpus <- Corpus(DataframeSource(stsp['opseg']))
+
+#Preprocessing
+preprocess <- function(corpus, stopwrds = myStop) {
+  #清除標點符號
+  corpus <- tm_map(corpus, removePunctuation)
+  #清除數字
+  corpus <- tm_map(corpus, removeNumbers)
+  #清除stopwrds
+  corpus <- tm_map(corpus, removeWords, stopwrds)
+  #清除空白
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus
+}
+
+corpus <- preprocess(corpus)
+
+# 空白之間分詞
+strsplit_space_tokenizer <- function(x)
+  unlist(strsplit(as.character(x), "[[:space:]]+"))
+
+#DT.mx
+DT.mx <- DocumentTermMatrix(corpus,
+                            control = list(tokenize = strsplit_space_tokenizer,
+                                           wordLengths = c(2, Inf)))
+
+# 降低維度
+DT.mx.sparse <- DocumentTermMatrix(corpus,
+                                   control = list(
+                                     tokenize = strsplit_space_tokenizer,
+                                     wordLengths = c(2, Inf),
+                                     dictionary = findFreqTerms(DT.mx, 3)
+                                   ))
+# 建立df
+stsp.op <- as.data.frame(cbind(dept = stsp$dept, as.matrix(DT.mx.sparse)), 
+                         stringsAsFactors = FALSE)
+# 轉數值
+stsp.op[, -1] <- apply(stsp.op[, -1], 2, as.numeric)
+# 去除全部0者
+stsp.op <- stsp.op[!rowSums(stsp.op[, -1]) == 0,]
+# 轉因子
+stsp.op$dept <- factor(stsp.op$dept)
+
+ctrl.CV <- trainControl(method = "LGOCV", p = 0.8)
+# get best result
+getBest <- function(md)
+{
+  df <- md$results
+  index <- best(df, metric = "Accuracy", maximize = TRUE)
+  best.df <- df[index,]
+  return(best.df)
+}
+
+# get results
+getResult <- function(mtd)
+{
+  print(paste(mtd, '...'))
+  # 預設值
+  model.CM <- NA
+  acc <- NA
+  kpp <- NA
+  tim <- 0
+  # rum method
+  set.seed(777)
+  try({
+    exe.Time <- system.time(
+      model.CM <- train(dept ~ ., data = stsp.op, metric = 'Accuracy',
+                        trControl = ctrl.CV, method = mtd))
+    #plot(model.CM, main = paste('method:', mtd))
+  }, silent=TRUE)
+  
+  if (mode(model.CM)=='list') {
+    acc <- getBest(model.CM)[1, 'Accuracy']
+    kpp <- getBest(model.CM)[1, 'Kappa']
+    tim <- exe.Time[3]
+  }
+  
+  result.ls <- list(Method = mtd , Accuracy = acc, Kappa = kpp, Elapsed = tim)
+  result.ls
+}
+
+# 分類方法
+CM <- c('JRip','nnet', 'xgbTree', 'gbm', 'knn', 'svmRadial', 'nb', 'rpart', 'treebag')
+
+# doSNOW 平行運算
+cl <- makeCluster(4)
+registerDoSNOW(cl)
+
+totalResult <- lapply(CM, function(x) getResult(x))
+performance <- do.call(rbind, totalResult)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+* ### text classiﬁcation in opinion mining of the website
+
+***
+
+    library(jiebaR)
+    library(tm)
+    library(rio)
+    library(dplyr)
+    library(caret)
+    library(doParallel)
+    library(doSNOW)
+    library(wordcloud)
+
+    jiebaR：中文斷詞套件
+    tm：文字探勘套件
+    rio：資料I/O相關工具
+    dplyr：數據操作(Data Manipulation)工具
+    caret：整合分類與迴歸模型的強大訓練框架
+    doSNOW：平行運算套件
+    wordcloud：文字雲套件
+    
+***
+
+舉凡email分類、垃圾郵件過濾、新聞內容歸類、文件分類...等都是文本分類(text classiﬁcation)的相關應用，這次練習使用的是網站意見信箱的資料，目的是希望藉由來信主旨自動分辨出承辦單位。原始資料來源為.xls 檔，經由 rio 套件匯入、文字清理後，資料結構如下，op 欄位是來信主旨(以下稱為文件)、dept 欄位是負責的承辦單位
+
+```{r, echo=FALSE}
+str(stsp.ini)
+```
+
+這裡僅以三個承辦組室為例(他們生意最好、陳情案例較多)，以下是 raw data 分配筆數
+
+```{r, echo=FALSE}
+table(as.factor(stsp$dept))
+```
+
+***
+
+斷詞(segmentation)是 text mining 資料前處理之一，有一些工具可提供中文斷詞服務，例如：Rwordseg、jiebaR、中研院CKIP、QSearch API、Stanford Word Segmenter等，各家斷詞結果不盡相同、各有優缺，此練習採用 jiebaR 套件，斷詞後使用 tm 套件建立文本(corpus)，停用字(stop words)為自訂，其他前處理如下
+
+```{r, eval=FALSE}
+#Preprocessing
+preprocess <- function(corpus, stopwrds = myStop) {
+  #清除標點符號
+  corpus <- tm_map(corpus, removePunctuation)
+  #清除數字
+  corpus <- tm_map(corpus, removeNumbers)
+  #清除stopwrds
+  corpus <- tm_map(corpus, removeWords, stopwrds)
+  #清除空白
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus
+}
+```
+
+斷詞整理後的文本資料如下(以其中3筆為例)，可看出有些來信的主旨相當精簡
+
+```{r, echo=FALSE}
+#查看text
+writeLines(as.character(corpus[[1]]))
+writeLines(as.character(corpus[[15]]))
+writeLines(as.character(corpus[[315]]))
+```
+
+試著用前30個最常見的詞建立字雲(word cloud)，探查民眾反應的意見
+
+```{r, echo=FALSE}
+windowsFonts(TW1 = windowsFont("華康行書體(P)"))
+par(family = "TW1",mar = rep(0.3, 4))
+#前30個最常見的詞
+wordcloud(corpus, max.words = 30, scale = c(4, 0.5),
+          colors = blues9[order(blues9)][c(1,3,5)], rot.per = 0, use.r.layout=T,
+          font = 3, mar = rep(0, 4), random.order = FALSE)
+```
+
+***
+
+接著，利用文本產生 Document-Term 矩陣，考慮到字長為1者無用的詞居多，這裡限制字長至少為2
+
+```{r, eval=FALSE}
+DT.mx <- DocumentTermMatrix(corpus, control = list(tokenize = strsplit_space_tokenizer,
+                                                   wordLengths = c(2, Inf)))
+```
+
+DT.mx 矩陣維度為 1849
+
+```{r}
+dim(DT.mx)
+```
+
+隨機檢視一下矩陣中的前5筆文件、第210至220的詞，可發現矩陣相當稀疏，字詞出現頻率全為0
+
+```{r, echo=FALSE}
+inspect(DT.mx[1:5,210:220])
+```
+
+甚至有9筆文件在矩陣中連一個詞都沒出現，表示來信主旨可能只填寫一個字或者是停用字集中的詞，這些文件後續將排除在外
+
+```{r}
+which(rowSums(as.matrix(DT.mx)) == 0)
+```
+
+有了 Document-Term 矩陣，可以查看出現在多筆文件的字詞有哪些，以下列出至少出現在30筆文件中的詞
+
+```{r}
+#至少出現在30筆文件的字詞
+findFreqTerms(DT.mx, 30)
+```
+
+除了使用頻率來查看字詞，詞的關聯性也是查看的重點，相關門檻值定0.3，其中由於巡迴巴士、單身宿舍的詞多為隨伴屬性，因此出現並不意外，而加班的關聯詞則反應出民眾陳情的負面事項
+
+```{r, echo=FALSE}
+# 詞關聯
+findAssocs(DT.mx,'巴士', 0.3)
+findAssocs(DT.mx,'加班', 0.3)
+findAssocs(DT.mx,'宿舍', 0.3)
+```
+
+面對多維稀疏矩陣，為避免維度詛咒(curse of dimensionality)發生，加入至少出現在3筆文件的詞為條件，來建立向量空間(VSM)、降低維度
+
+```{r, eval=FALSE}
+# 降低維度
+DT.mx.sparse <- DocumentTermMatrix(corpus, control = list( tokenize = strsplit_space_tokenizer,
+                                                           wordLengths = c(2, Inf),
+                                                           dictionary = findFreqTerms(DT.mx, 3)
+))
+```
+
+矩陣維度由之前的 1849 降為 382
+
+```{r}
+dim(DT.mx.sparse)
+```
+
+魚與熊掌不可兼得，這也表示損失一些文件可用，約 8.8 %
+
+```{r}
+sum(rowSums(as.matrix(DT.mx.sparse)) == 0) / nrow(as.matrix(DT.mx.sparse))
+```
+
+***
+
+接下來，使用降維的矩陣資料及文件label(dept欄位)建立資料框架，並去除全部為0的文件，得到實際可用的資料筆數為1051，將使用這些文件來進行分類
+
+```{r, eval=FALSE}
+# 建立df
+stsp.op <- as.data.frame(cbind(dept = stsp$dept, as.matrix(DT.mx.sparse)), 
+                         stringsAsFactors = FALSE)
+# 轉數值
+stsp.op[, -1] <- apply(stsp.op[, -1], 2, as.numeric)
+# 去除全部0者
+stsp.op <- stsp.op[!rowSums(stsp.op[, -1]) == 0,]
+# 轉因子
+stsp.op$dept <- factor(stsp.op$dept)
+```
+
+CV 採用 80 % 訓練、20 % 測試
+
+```{r, eval=FALSE}
+# Holdout sampling (training data proportion)
+ctrl.CV <- trainControl(method = "LGOCV", p = 0.8)
+```
+
+以最大 Accuracy 為最佳結果
+
+```{r, eval=FALSE}
+# get best 
+getBest <- function(md){
+  df <- md$results
+  index <- best(df, metric = "Accuracy", maximize = TRUE)
+  best.df <- df[index, ]
+  return(best.df)
+}
+```
+
+實作分類方法、回傳預設最佳結果
+
+```{r, eval=FALSE}
+# get results
+getResults <- function(mtd){
+  # 預設值
+  model.CM <- NA
+  acc <- NA
+  kpp <- NA
+  tim <- 0
+  # rum method
+  set.seed(777)
+  try({
+    exe.Time <- system.time(model.CM <- train(dept ~ ., data = stsp.op, metric = 'Accuracy',
+                                              trControl = ctrl.CV, method = mtd))
+  }, silent=TRUE)
+  
+  if (mode(model.CM)=='list') {
+    acc <- getBest(model.CM)[1, 'Accuracy']
+    kpp <- getBest(model.CM)[1, 'Kappa']
+    tim <- exe.Time[3]
+  }
+  
+  result.ls <- list(Method = mtd , Accuracy = acc, Kappa = kpp, Elapsed = tim)
+  result.ls
+}
+```
+
+分類方法:
+
+  + JRip (Rule-Based Classifier)
+  + nnet (Neural Network)
+  + xgbTree (eXtreme Gradient Boosting)
+  + gbm (Stochastic Gradient Boosting)
+  + knn (k-Nearest Neighbors)
+  + svmRadial (SVM with Radial Basis Function Kernel)
+  + nb (Naive Bayes)
+  + rpart (CART)
+  + treebag (Bagged CART)
+
+```{r, eval=FALSE}
+# 分類方法
+CM <- c('JRip','nnet', 'xgbTree', 'gbm', 'knn', 'svmRadial', 'nb', 'rpart', 'treebag')
+```
+
+礙於NB硬體的限制，使用4核平行運算
+
+```{r, eval=FALSE}
+# 平行運算
+cl <- makeCluster(4)
+registerDoSNOW(cl)
+
+totalResult <- lapply(CM, function(x) getResults(x))
+performance <- do.call(rbind, totalResult)
+
+stopCluster(cl)
+registerDoSEQ()
+```
+
+從執行結果看來，Accuracy 普遍不高，不過其中以 xgbTree 表現最好、nb 最差。另外，從 Elapsed  可知各分類方法執行所花的時間，其中 nnet 和 knn 在兼顧效能和 Accuracy 上表現不俗，nb 所花時間最長、Accuracy 也墊底。整體來說，精簡的來信主旨做為資料集，形成多維的稀疏矩陣，造成分類準確的困難，若能加入來信的其他文字內容、或增加資料筆數等，配合進一步的 feature selection，或許能提高 Accuracy.
+
+```{r, echo=FALSE}
+performance <- data.frame(performance)
+performance$Accuracy <- unlist(performance$Accuracy)
+performance$Method <- unlist(performance$Method)
+performance$Kappa <- unlist(performance$Kappa)
+performance$Elapsed <- unlist(performance$Elapsed)
+
+kable(arrange(performance, desc(Accuracy)))
+```
+
+
+***
+
+* ### Lessons Learned:
+    + #### Text mining
+    + #### Text classiﬁcation algorithms
+    + #### Parallel with multicore
+    
