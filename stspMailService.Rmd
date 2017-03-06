@@ -168,7 +168,6 @@ registerDoSEQ()
     library(rio)
     library(dplyr)
     library(caret)
-    library(doParallel)
     library(doSNOW)
     library(wordcloud)
 
@@ -267,7 +266,7 @@ which(rowSums(as.matrix(DT.mx)) == 0)
 findFreqTerms(DT.mx, 30)
 ```
 
-除了使用頻率來查看字詞，詞的關聯性也是查看的重點，相關門檻值定0.3，其中由於巡迴巴士、單身宿舍的詞多為隨伴屬性，因此出現並不意外，而加班的關聯詞則反應出民眾陳情的負面事項
+除了使用頻率來查看字詞，詞的關聯性也是查看的重點，相關門檻值定0.3，其中由於巡迴巴士、單身宿舍多為 bigram 的詞，因此出現並不意外，而加班的關聯詞則反應出民眾陳情的負面事項
 
 ```{r, echo=FALSE}
 # 詞關聯
@@ -317,7 +316,7 @@ stsp.op$dept <- factor(stsp.op$dept)
 CV 採用 80 % 訓練、20 % 測試
 
 ```{r, eval=FALSE}
-# Holdout sampling (training data proportion)
+# Holdout sampling (訓練資料比例:0.8)
 ctrl.CV <- trainControl(method = "LGOCV", p = 0.8)
 ```
 
@@ -343,7 +342,7 @@ getResults <- function(mtd){
   acc <- NA
   kpp <- NA
   tim <- 0
-  # rum method
+  # run method
   set.seed(777)
   try({
     exe.Time <- system.time(model.CM <- train(dept ~ ., data = stsp.op, metric = 'Accuracy',
@@ -392,7 +391,7 @@ stopCluster(cl)
 registerDoSEQ()
 ```
 
-從執行結果看來，Accuracy 普遍不高，不過其中以 xgbTree 表現最好、nb 最差。另外，從 Elapsed  可知各分類方法執行所花的時間，其中 nnet 和 knn 在兼顧效能和 Accuracy 上表現不俗，nb 所花時間最長、Accuracy 也墊底。整體來說，精簡的來信主旨做為資料集，形成多維的稀疏矩陣，造成分類準確的困難，若能加入來信的其他文字內容、或增加資料筆數等，配合進一步的 feature selection，或許能提高 Accuracy.
+從執行結果看來，Accuracy 普遍不高，不過其中以 xgbTree 表現最好、nb 最差。另外，從 Elapsed  可知各分類方法執行所花的時間，其中 nnet 和 knn 在兼顧效能和 Accuracy 上表現不俗，nb 所花時間最長、Accuracy 也墊底。整體來說，精簡的來信主旨做為資料集，形成多維的稀疏矩陣，造成分類準確的困難，若能加入來信的其他文字內容、或增加資料筆數等，配合進一步的 feature selection，相信能提高 Accuracy。不過以目前使用的資料及方法，自動分辨出3個承辦單位的準確率不到7成，如果要能自動分辨出所有(8個)的承辦單位，準確率至少還得下修1成以上。
 
 ```{r, echo=FALSE}
 performance <- data.frame(performance)
@@ -403,7 +402,6 @@ performance$Elapsed <- unlist(performance$Elapsed)
 
 kable(arrange(performance, desc(Accuracy)))
 ```
-
 
 ***
 

@@ -232,7 +232,6 @@ library(tm)
 library(rio)
 library(dplyr)
 library(caret)
-library(doParallel)
 library(doSNOW)
 library(wordcloud)
 
@@ -302,7 +301,7 @@ preprocess &lt;-<span class="st"> </span>function(corpus, <span class="dt">stopw
 <span class="kw">findFreqTerms</span>(DT.mx, <span class="dv">30</span>)</code></pre></div>
 <pre><code>##  [1] &quot;公司&quot;   &quot;巴士&quot;   &quot;加班&quot;   &quot;申訴&quot;   &quot;交通&quot;   &quot;員工&quot;   &quot;停車場&quot;
 ##  [8] &quot;宿舍&quot;   &quot;接駁&quot;   &quot;超時&quot;   &quot;園區&quot;</code></pre>
-<p>除了使用頻率來查看字詞，詞的關聯性也是查看的重點，相關門檻值定0.3，其中由於巡迴巴士、單身宿舍的詞多為隨伴屬性，因此出現並不意外，而加班的關聯詞則反應出民眾陳情的負面事項</p>
+<p>除了使用頻率來查看字詞，詞的關聯性也是查看的重點，相關門檻值定0.3，其中由於巡迴巴士、單身宿舍多為 bigram 的詞，因此出現並不意外，而加班的關聯詞則反應出民眾陳情的負面事項</p>
 <pre><code>## $巴士
 ## 巡迴 環線 
 ## 0.87 0.32</code></pre>
@@ -336,7 +335,7 @@ stsp.op &lt;-<span class="st"> </span>stsp.op[!<span class="kw">rowSums</span>(s
 <span class="co"># 轉因子</span>
 stsp.op$dept &lt;-<span class="st"> </span><span class="kw">factor</span>(stsp.op$dept)</code></pre></div>
 <p>CV 採用 80 % 訓練、20 % 測試</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># Holdout sampling (training data proportion)</span>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># Holdout sampling (訓練資料比例:0.8)</span>
 ctrl.CV &lt;-<span class="st"> </span><span class="kw">trainControl</span>(<span class="dt">method =</span> <span class="st">&quot;LGOCV&quot;</span>, <span class="dt">p =</span> <span class="fl">0.8</span>)</code></pre></div>
 <p>以最大 Accuracy 為最佳結果</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># get best </span>
@@ -354,7 +353,7 @@ getResults &lt;-<span class="st"> </span>function(mtd){
   acc &lt;-<span class="st"> </span><span class="ot">NA</span>
   kpp &lt;-<span class="st"> </span><span class="ot">NA</span>
   tim &lt;-<span class="st"> </span><span class="dv">0</span>
-  <span class="co"># rum method</span>
+  <span class="co"># run method</span>
   <span class="kw">set.seed</span>(<span class="dv">777</span>)
   <span class="kw">try</span>({
     exe.Time &lt;-<span class="st"> </span><span class="kw">system.time</span>(model.CM &lt;-<span class="st"> </span><span class="kw">train</span>(dept ~<span class="st"> </span>., <span class="dt">data =</span> stsp.op, <span class="dt">metric =</span> <span class="st">'Accuracy'</span>,
@@ -394,7 +393,7 @@ performance &lt;-<span class="st"> </span><span class="kw">do.call</span>(rbind,
 
 <span class="kw">stopCluster</span>(cl)
 <span class="kw">registerDoSEQ</span>()</code></pre></div>
-<p>從執行結果看來，Accuracy 普遍不高，不過其中以 xgbTree 表現最好、nb 最差。另外，從 Elapsed 可知各分類方法執行所花的時間，其中 nnet 和 knn 在兼顧效能和 Accuracy 上表現不俗，nb 所花時間最長、Accuracy 也墊底。整體來說，精簡的來信主旨做為資料集，形成多維的稀疏矩陣，造成分類準確的困難，若能加入來信的其他文字內容、或增加資料筆數等，配合進一步的 feature selection，或許能提高 Accuracy.</p>
+<p>從執行結果看來，Accuracy 普遍不高，不過其中以 xgbTree 表現最好、nb 最差。另外，從 Elapsed 可知各分類方法執行所花的時間，其中 nnet 和 knn 在兼顧效能和 Accuracy 上表現不俗，nb 所花時間最長、Accuracy 也墊底。整體來說，精簡的來信主旨做為資料集，形成多維的稀疏矩陣，造成分類準確的困難，若能加入來信的其他文字內容、或增加資料筆數等，配合進一步的 feature selection，相信能提高 Accuracy。不過以目前使用的資料及方法，自動分辨出3個承辦單位的準確率不到7成，如果要能自動分辨出所有(8個)的承辦單位，準確率至少還得下修1成以上。</p>
 <table>
 <thead>
 <tr class="header">
@@ -409,55 +408,55 @@ performance &lt;-<span class="st"> </span><span class="kw">do.call</span>(rbind,
 <td align="left">xgbTree</td>
 <td align="right">0.6981818</td>
 <td align="right">0.5231306</td>
-<td align="right">106.40</td>
+<td align="right">112.67</td>
 </tr>
 <tr class="even">
 <td align="left">knn</td>
 <td align="right">0.6562679</td>
 <td align="right">0.4525130</td>
-<td align="right">38.08</td>
+<td align="right">37.30</td>
 </tr>
 <tr class="odd">
 <td align="left">nnet</td>
 <td align="right">0.6541627</td>
 <td align="right">0.4658159</td>
-<td align="right">48.17</td>
+<td align="right">50.10</td>
 </tr>
 <tr class="even">
 <td align="left">treebag</td>
 <td align="right">0.6474641</td>
 <td align="right">0.4269265</td>
-<td align="right">82.18</td>
+<td align="right">85.25</td>
 </tr>
 <tr class="odd">
 <td align="left">gbm</td>
 <td align="right">0.6254545</td>
 <td align="right">0.3939415</td>
-<td align="right">123.52</td>
+<td align="right">126.41</td>
 </tr>
 <tr class="even">
 <td align="left">JRip</td>
 <td align="right">0.6235407</td>
 <td align="right">0.3887637</td>
-<td align="right">95.74</td>
+<td align="right">106.64</td>
 </tr>
 <tr class="odd">
 <td align="left">rpart</td>
 <td align="right">0.5978947</td>
 <td align="right">0.3348398</td>
-<td align="right">7.75</td>
+<td align="right">8.46</td>
 </tr>
 <tr class="even">
 <td align="left">svmRadial</td>
 <td align="right">0.4667943</td>
 <td align="right">0.0861835</td>
-<td align="right">36.21</td>
+<td align="right">38.38</td>
 </tr>
 <tr class="odd">
 <td align="left">nb</td>
 <td align="right">0.4210526</td>
 <td align="right">0.0000000</td>
-<td align="right">210.55</td>
+<td align="right">217.81</td>
 </tr>
 </tbody>
 </table>
