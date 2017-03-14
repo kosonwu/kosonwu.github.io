@@ -1,5 +1,5 @@
 ---
-title: "KosonWu @ Github"
+title: "practice in R"
 output: 
   html_document:
     highlight: "pygments"
