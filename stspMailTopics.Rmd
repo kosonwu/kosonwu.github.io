@@ -1,0 +1,296 @@
+---
+title: ''
+date: "2017-03-14"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(rio)
+library(dplyr)
+library(mallet)
+library(ggplot2)
+library(reshape)
+library(wordcloud)
+
+source('D:\\workspace_R\\kosonwu.github.io\\seg.R')
+Str <- '迎曦湖停車亂象續'
+ckip.Str <- segCKIP(Str)
+# 想要的詞類
+tags <- c('(N)','(Nv)')
+# filter tags ,keep 想要的詞
+filterTag <- function(cstr, tags) {
+  vstr <- strsplit(cstr, '　')[[1]]
+  result <- c()
+  istag <- rep(FALSE,length(vstr))
+  for (i in seq_along(tags)) {
+    tt <- grepl(tags[i], vstr,  fixed = T)
+    istag <- istag + tt
+  }
+  # filter tag
+  keepstr <- vstr[istag == 1]
+  # replace tag
+  str <- gsub('[(A-Za-z)]+$', '', keepstr)
+  #paste(result, collapse = ' ')
+  paste(str, collapse = ' ')
+}
+
+# 載入
+stsp <- read.csv(file.path("data", "stsp", "deptData.csv"), stringsAsFactors = FALSE)
+stsp <- stsp[stsp$dept %in% c('建管組','營建組','環安組'),]
+
+documents <- as.data.frame(cbind(seq_along(stsp$keepTerm), stsp$keepTerm), stringsAsFactors=F)
+colnames(documents) <- c("id", "text")
+# import documents into Mallet format
+mallet.instances <- mallet.import(documents$id,
+                                  documents$text,
+                                  file.path("data", "stsp","myStopword.txt"),
+                                  FALSE,
+                                  token.regexp="[\\p{L}']+")
+# 主題數
+tNum <- 5
+# 代表詞數 for each topic
+wNum <- 6
+# 建立TM trainer
+topic.model <- MalletLDA(num.topics = tNum)
+topic.model$loadDocuments(mallet.instances)
+
+vocabulary <- topic.model$getVocabulary()
+word.freqs <- mallet.word.freqs(topic.model)
+set.seed(777)
+topic.model$train(200)
+
+# Topic-Words matrix
+topic.words.m <- mallet.topic.words(topic.model, smoothed=T, normalized=T)
+colnames(topic.words.m) <- vocabulary
+
+# Doc-Topics matrix
+doc.topics.m <- mallet.doc.topics(topic.model, smoothed=T, normalized=T)
+doc.topics.df <- as.data.frame(doc.topics.m)
+
+doc.topics.df <- cbind(stsp[,2], doc.topics.df)
+
+colnames(doc.topics.df) <- c("dept", paste('Topic',seq(tNum),sep = '.'))
+# aggregate
+doc.topic.means.df <- aggregate(doc.topics.df[, 2:ncol(doc.topics.df)],
+                                list(doc.topics.df[,1]),
+                                mean)
+
+doc.topic.means.melt <- melt(doc.topic.means.df, id='Group.1')
+colnames(doc.topic.means.melt) <- c('Groups', 'variable', 'value')
+```
+
+* ### extracting the topics with LDA (Latent Dirichlet Allocation)
+
+***
+
+    library(rio)
+    library(dplyr)
+    library(mallet)
+    library(ggplot2)
+    library(reshape)
+    library(wordcloud)
+
+    rio：資料I/O相關工具
+    dplyr：數據操作(Data Manipulation)工具
+    mallet：主題模型(Topic Modeling)套件
+    ggplot2：資料視覺化繪圖工具
+    reshape：數據重塑使用
+    wordcloud：文字雲套件
+    
+***
+
+主題模型( Topic Modeling )也是文字探勘任務之一，這回延用[上一則](./stspMailService.html)的網站意見信箱資料，假設的情境是如果能從一堆民眾建議事項中歸納出相關的主題，或許有助於決策者了解施政方向和改善重點，提升民眾滿意度。在主題模型中，假設文件是由不同比例的主題所組成，文集中的每個詞在主題中都是一個機率分佈，換言之，在主題中每個詞的機率加總為1。在斷詞的部份，這次使用<a href="http://ckipsvr.iis.sinica.edu.tw/" target="_blank">中研院CKIP斷詞系統</a>，下面的字串示範CKIP斷詞結果，可發現CKIP除了斷詞，還會加入詞類標記(POS Tagging)
+
+```{r}
+Str <- '迎曦湖停車亂象續'
+```
+
+```{r, echo=FALSE}
+ckip.Str
+```
+
+有研究指出，使用名詞所產生主題的詞較具體、有意義。因此，這次的練習在斷詞後僅保留詞類為N(代名詞)及Nv(名物化動詞)的詞
+
+```{r, echo=FALSE}
+filterTag(ckip.Str, tags)
+```
+
+***
+
+文集經過前處理、斷詞及詞類過濾後，就能拿來建立主題模型。topicmodels、lda、mallet等都是建立主題模型的套件，以下我採用 mallet 套件方法
+
+```{r, eval=FALSE}
+# import documents into Mallet format
+mallet.instances <- mallet.import(documents$id,
+                                  documents$text,
+                                  file.path("data", "stsp","myStopword.txt"),
+                                  FALSE,
+                                  token.regexp="[\\p{L}']+")
+```
+
+以三個承辦組室(建管、營建、環安組)的意見信箱為例，假設決策者希望從中歸納出5大主題，每個主題我設定用6個詞來表示
+
+```{r, eval=FALSE}
+# 主題數
+tNum <- 5
+# 代表詞數 for each topic
+wNum <- 6
+# 建立TM trainer
+topic.model <- MalletLDA(num.topics = tNum)
+topic.model$loadDocuments(mallet.instances)
+# Get vocabulary and word frequencies
+vocabulary <- topic.model$getVocabulary()
+word.freqs <- mallet.word.freqs(topic.model)
+# number of iterations
+topic.model$train(200)
+```
+
+主題-字詞矩陣，前10個字詞示範
+
+```{r, eval=FALSE}
+# Topic-Words matrix
+topic.words.m <- mallet.topic.words(topic.model, smoothed = T, normalized = T)
+colnames(topic.words.m) <- vocabulary
+topic.words.m[,1:10]
+```
+
+```{r, echo=FALSE}
+topic.words.m[,1:10]
+```
+
+將主題-字詞矩陣依權重排序，5個主題的前6個代表詞如下。決策者可依主題下的代表詞，來了解意見信箱中民眾在意的主題概念，例如：宿舍周邊? 勞資糾紛? 停車問題? 道路交通等...
+
+```{r, echo=FALSE}
+# each topic 前幾個代表詞
+for(i in seq_len(tNum)){
+  tw.ini <- sort(topic.words.m[i, ], decreasing = T)[seq_len(wNum)]
+  tw.ini <- round(tw.ini, 5)
+  tw.new <- append(tw.ini, 'weights', after = 0)
+  attr(tw.new, 'names') <- c(paste('Topic', i, sep = '.'), attr(tw.ini, 'names'))
+  print(tw.new)
+}
+```
+
+主題視覺化，以每個主題前100個字詞和權重形成文字雲，幫助了解主題的重點
+
+```{r, echo=FALSE}
+windowsFonts(TW1 = windowsFont("華康儷中黑"))
+par(family = "TW1",mar = rep(0, 4), mfrow=c(2,3))
+for(i in 1:5){
+  topic1 <- mallet.top.words(topic.model, topic.words.m[i,], 100)
+  suppressWarnings(
+  wordcloud(topic1$words, topic1$weights,  colors = sort(blues9, decreasing = T)[5:8], 
+            rot.per = 0, use.r.layout = T, font = 3, mar = rep(0, 4), random.order = F)
+  )
+}
+```
+
+文件-主題矩陣，前10筆文件示範
+
+```{r, eval=FALSE}
+# Doc-Topics matrix
+doc.topics.m <- mallet.doc.topics(topic.model, smoothed = T, normalized = T)
+doc.topics.m[1:10,]
+```
+
+```{r, echo=FALSE}
+doc.topics.m[1:10,]
+```
+
+
+有了文件-主題矩陣，接著併入文件所屬組室(dept)的欄位，計算每個組室在各主題的平均權重，如此一來便可以知道主題在各組室的相對比重
+
+```{r}
+doc.topic.means.df
+```
+
+```{r, echo=FALSE}
+ggplot(doc.topic.means.melt, aes(Groups, value)) + geom_bar(aes(fill = Groups), stat = "identity") + facet_wrap( ~ variable) +
+  labs(title = paste('Mean Weights of Topics by Groups'),
+       x = '',
+       y = 'mean weights') + theme(axis.text.x = element_text(angle = 45))
+```
+
+***
+
+有了主題當橋接，利用以上兩個矩陣可以得到 Document-Term 矩陣，從中可以發現 LDA 有別於傳統模型，例如id為360的文件，其文字內容僅有紅綠燈，在LDA的文件字詞矩陣中也有其他字詞出現的機率值(以機率排序前10字詞為例)
+
+```{r, eval=FALSE}
+# Doc.Words 機率矩陣(doc-term matrix)
+lda.DT.m <- doc.topics.m %*% topic.words.m 
+documents[360,]
+head(sort(lda.DT.m[360,], decreasing = T),10)
+```
+
+```{r, echo=FALSE}
+# Doc.Words 機率矩陣(doc-term matrix)
+lda.DT.m <- doc.topics.m %*% topic.words.m 
+documents[360,]
+head(sort(lda.DT.m[360,], decreasing = T),10)
+```
+
+***
+
+此外，亦可縮小文件範圍、針對個別組室的意見問題來進行主題偵測。例如組長要知道民眾反應問題前2大主軸為何，透過 LDA 的 Topic Modeling 有助於了解主題樣貌及相關權重
+
+```{r, echo=FALSE}
+division <- c('建管組','營建組','環安組')
+
+for(x in seq_along(division)){
+# 載入
+stsp <- read.csv(file.path("data", "stsp", "deptData.csv"), stringsAsFactors = FALSE)
+
+stsp <- stsp[stsp$dept ==division[x],]
+
+documents <- as.data.frame(cbind(seq_along(stsp$keepTerm), stsp$keepTerm), stringsAsFactors=F)
+colnames(documents) <- c("id", "text")
+mallet.instances <- mallet.import(documents$id,
+                                  documents$text,
+                                  file.path("data", "stsp","myStopword.txt"),
+                                  FALSE,
+                                  token.regexp="[\\p{L}']+")
+# 主題數
+tNum <- 2
+# 代表詞數 for each topic
+wNum <- 6
+
+# 建立TM trainer
+topic.model <- MalletLDA(num.topics = tNum)
+topic.model$loadDocuments(mallet.instances)
+
+vocabulary <- topic.model$getVocabulary()
+word.freqs <- mallet.word.freqs(topic.model)
+
+topic.model$train(200)
+
+# Topic-Words matrix
+topic.words.m <- mallet.topic.words(topic.model, smoothed=T, normalized=T)
+colnames(topic.words.m) <- vocabulary
+
+print(division[x])
+# each topic 前幾個代表詞
+for(i in seq_len(tNum)){
+  tw.ini <- sort(topic.words.m[i, ], decreasing = T)[seq_len(wNum)]
+  tw.ini <- round(tw.ini, 5)
+  tw.new <- append(tw.ini, 'weights', after = 0)
+  attr(tw.new, 'names') <-
+    c(paste('Topic', i, sep = '.'), attr(tw.ini, 'names'))
+  print(tw.new)
+}
+
+}
+```
+
+這次練習運用詞類標記及 mallet 套件方法，相信有助於決策者了解民眾反應事項的主題重點，然而主題擷取及偵測只是 Topic Modeling 應用的一部份，期待後續加入時序的主題追蹤應用
+
+***
+
+* ### Lessons Learned:
+    + #### Topic Modeling by mallet.
+    + #### POS (Part-of-Speech) Tagging.
+    + #### LDA (Latent Dirichlet Allocation).

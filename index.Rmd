@@ -14,6 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [extracting the topics with LDA](./stspMailTopics.html) --- 
+使用 LDA 擷取主題 - 以網站意見信箱為例.
+( *2017-03-14* )
+
 * [text classiﬁcation in opinion mining of the website](./stspMailService.html) --- 
 文本分類應用 - 以網站意見信箱為例.
 ( *2017-03-03* )
