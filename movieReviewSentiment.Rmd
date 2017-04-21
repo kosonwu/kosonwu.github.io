@@ -1,0 +1,421 @@
+---
+title: ""
+date: "2017-04-22"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(data.table)
+library(tidytext)
+library(text2vec)
+library(caret)
+library(SnowballC)
+library(glmnet)
+library(ROCR)
+library(plyr)
+library(ggplot2)
+library(e1071)
+library(kernlab)
+library(randomForest)
+load(file.path("data", "movie_reviews", "5.RData"))
+```
+
+* ### movie reviews sentiment analysis - Bag of Words Meets Bags of Popcorn
+
+***
+
+    library(data.table)
+    library(tidytext)
+    library(text2vec)
+    library(caret)
+    library(SnowballC)
+    library(glmnet)
+    library(ROCR)
+    library(plyr)
+    library(ggplot2)
+    library(e1071)
+    library(kernlab)
+    library(randomForest)
+    
+***
+
+情感分析(Sentiment Analysis)是文字探勘的重要應用之一，以下練習使用 <a href="https://www.kaggle.com/c/word2vec-nlp-tutorial/data" target="_blank">Kaggle</a> 提供的資料集，其中 labeledTrainData.tsv 是包含標籤(0:負評,1:正評)的影評資料(25000筆)，unlabeledTrainData.tsv 則是沒有標籤的影評資料(50000筆)，將利用這些資料進行訓練、建模，目的是正確分類出影評所屬的極性 (polarity)。下圖為本次練習的大致流程...
+
+![](image/movieReviews.png)
+
+***
+
+* #### __Preprocessing and extracting movie reviews __
+
+首先，利用 read.table 讀入 labeledTrainData.tsv，該檔案包含三個欄位：id、sentiment 和 review
+
+```{r, echo=FALSE}
+str(subset(movie_reviews, select = c('id','sentiment','review')))
+```
+
+查看 sentiment 欄位資料比例，negative、positive 都是50%
+
+```{r, echo=FALSE}
+prop.table(table(movie_reviews$sentiment))
+```
+
+除了進行以下的字串清理，也利用 tidytext 套件中 stop_words (lexicon=='onix') 設定停用字
+
+```{r, eval=FALSE}
+# 字串清理
+cleanText <- function(chr) {
+  # 刪除 links
+  chr = gsub("(f|ht)(tp)(s?)(://)(.*)[.|/](.*)", " ", chr)
+  # 刪除 html tag
+  chr = gsub("<.*?>", " ", chr)
+  # 刪除數字
+  chr = gsub("[[:digit:]]", " ", chr)
+  # 刪除控制字元
+  chr = gsub("[[:cntrl:]]", " ", chr)
+  # 刪除非字母
+  chr = gsub("[^a-zA-Z' ]+", " ", chr)
+  # 轉小寫
+  chr = tolower(chr)
+  # 刪除tab及前後空白
+  chr = gsub("[ \t]{2,}", " ", chr)
+  chr = gsub("^\\s+|\\s+$", "", chr)
+  chr
+}
+```
+
+由於是情感分析，參考了幾個 sentiment lexicon，了解一下情感字詞的 POS 特性，使用 tidytext 套件的 parts_of_speech 發現，lexicon 中大於 3% 的詞類皆為以下6種(事實上，parts_of_speech 中 words 的詞類也是這樣分佈)
+
+```{r}
+# Afinn lexicon
+afinn.pos
+# Bing Liu lexicon
+bing.pos
+# NRC lexicon
+nrc.pos
+```
+
+經過字串的清理、POS過濾、stem還原，以id=='10008_2'資料為例，review是原始資料、review3是preprocessing後的資料
+
+```{r, echo=FALSE}
+subset(subset(movie_reviews, select = c(id,review,review3), subset = (id=='10008_2')), select = c(review,review3))
+
+```
+
+***
+
+* #### __Bag of words model __
+
+接著，將movie_reviews轉成data.table，訓練/測試資料比採7:3
+
+```{r, eval=FALSE}
+setDT(movie_reviews)
+setkey(movie_reviews, id)
+
+set.seed(777)
+all_ids <- movie_reviews$id
+train_ids <- sample(all_ids, 0.7 * length(all_ids))
+test_ids <- setdiff(all_ids, train_ids)
+train <- movie_reviews[J(train_ids)]
+test <- movie_reviews[J(test_ids)]
+```
+
+首先使用 Bag of words 方法，這裡使用 text2vec 套件去除停用字、建立 Document-term matrix (dtm)
+
+```{r, eval=FALSE}
+it_train = itoken(space_tokenizer(train$review3), ids = train$id, progressbar = FALSE)
+vocab = create_vocabulary(it_train, stopwords = myStopWords[[1]])
+vectorizer = vocab_vectorizer(vocab)
+dtm_train = create_dtm(it_train, vectorizer)
+```
+
+訓練資料的 dtm 維度
+
+```{r, echo=FALSE}
+dim(dtm_train)
+```
+
+利用 glmnet 套件進行邏輯迴歸擬合，預測所得的 Confusion Matrix 如下，Accuracy : 0.8532
+
+```{r, echo=FALSE}
+acc.glmnet_fit
+```
+
+繪製 ROC curve (藍色線)
+
+```{r, echo=FALSE}
+plot(perf, col = "blue", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), 
+     main = "ROC curve for sentiment")
+abline(a = 0, b = 1, lwd = 2, lty = 2)
+grid()
+```
+
+AUC 面積
+
+```{r, echo=FALSE}
+perf.auc@y.values[[1]]
+```
+
+測試看看下面的句子，預測結果為 0: negative (預測正確!)
+
+```{r, eval=FALSE}
+myreview = "I was going to say something awesome or great or good, but I simply can't because the movie is 
+so bad."
+```
+
+```{r}
+predict(glmnet.fit, dtm_myreview, type = 'class')[,1]
+```
+
+***
+
+* #### __Tf-idf model __
+
+第二種試試 Tf-idf，將前面所得到的 dtm 進行 normalization 與 tfidf
+
+```{r, eval=FALSE}
+# normalization & TFIDF
+normalizeTFIDF <- function(dtm) {
+  model_tfidf = TfIdf$new(norm = "l1")
+  dtm_norm_tfidf = fit_transform(dtm, model_tfidf)
+  dtm_norm_tfidf
+}
+
+dtm_train_tfidf = normalizeTFIDF(dtm_train)
+dtm_test_tfidf = normalizeTFIDF(dtm_test)
+```
+
+Tf-idf 預測得到的 Confusion Matrix 如下，Accuracy : 0.8507 (比前次的0.8532略低)
+
+```{r, echo=FALSE}
+acc.glmnet_fit2
+```
+
+繪製 ROC curve (紅色線)，感覺比藍色好一點點
+
+```{r, echo=FALSE}
+plot(perf, col = "blue", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), 
+     main = "ROC curve for sentiment")
+plot(perf2, col = "tomato", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), 
+     main = "ROC curve for sentiment", add = T)
+abline(a = 0, b = 1, lwd = 2, lty = 2)
+grid()
+```
+
+AUC 面積 (比前次的0.9236846略高)
+
+```{r, echo=FALSE}
+perf.auc2@y.values[[1]]
+```
+
+相同的測試句，這次預測結果為 1: positive (預測錯誤!)
+
+```{r}
+predict(glmnet.fit2, normalizeTFIDF(dtm_myreview), type = 'class')[,1]
+```
+
+***
+
+* #### __Word2Vec model __
+
+第三種作法使用 Word2Vec，利用前面23908個詞彙產生term-co-occurence matrix (TCM)、建立 word vectors (size 設定為500)
+
+```{r, eval=FALSE}
+vectorizer_tcm <- vocab_vectorizer(vocab, grow_dtm = FALSE, skip_grams_window = 5)
+# term-co-occurence matrix (TCM)
+tcm_train <- create_tcm(it_train, vectorizer_tcm)
+# GloVe algorithm
+# maximum number of co-occurrences to use in the weighting function : x_max
+glove = GlobalVectors$new(word_vectors_size = 500, vocabulary = vocab, x_max = 10)
+# number of SGD iterations
+glove$fit(tcm_train, n_iter = 10)
+# get the word vectors
+word_vectors <- glove$get_word_vectors()
+```
+
+換句話說，每個字詞可以用維度500的向量來表示
+
+```{r}
+dim(word_vectors)
+```
+
+接著將每則review的字詞對應到 word_vectors 加總平均，就是每一則review的向量。很明顯的，訓練資料的維度比之前的作法低很多很多
+
+```{r, echo=FALSE}
+dim(train.word2vec)
+```
+
+Word2Vec 預測得到的 Confusion Matrix 如下，Accuracy : 0.8364 (比前2次還低)
+
+```{r, echo=FALSE}
+acc.glmnet_fit3
+```
+
+繪製 ROC curve (綠色線)，和紅、藍線相比，整體內縮
+
+```{r, echo=FALSE}
+plot(perf, col = "royalblue", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2),
+     main = "ROC curve for sentiment")
+plot(perf2, col = "tomato", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+plot(perf3, col = "darkseagreen", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+abline(a = 0, b = 1, lwd = 2, lty = 2)
+grid()
+```
+
+AUC 面積 (低於前2次的表現)
+
+```{r, echo=FALSE}
+perf.auc3@y.values[[1]]
+```
+
+相同的測試句，Word2Vec model的預測結果為 0: negative (預測正確!)
+
+```{r}
+predict(glmnet.fit3, as.matrix(documentWord2Vec(myreview)), type = 'class')[,1]
+```
+
+***
+
+* #### __Word2Vec model including unlabeledTrainData __
+
+雖然 Word2Vec 目前的表現在上述三種中是最差的，不過它使用的維度只有500，和前2種作法(維度:23908)相比明顯低非常的多，加上目前都只使用了 labeledTrainData.tsv 進行訓練(25000筆 * 0.7)，另外還有 unlabeledTrainData.tsv (50000筆)尚未利用。
+
+這次合併2個檔案，相同的Preprocessing，產出新的 word_vectors 如下，可以發現參照的字詞由 23908 變成 33824
+
+```{r}
+dim(word_vectors_all)
+```
+
+一樣的word vectors size (500)，訓練資料筆數與維度如下
+
+```{r, echo=FALSE}
+dim(train.word2vec_all)
+```
+
+這次 Word2Vec 預測得到的 Confusion Matrix 如下，Accuracy : 0.8513 (明顯比前次 0.8364 高)
+
+```{r, echo=FALSE}
+acc.glmnet_fit4
+```
+
+繪製 ROC curve (黃色線)，已經逼近了紅、藍線
+
+```{r, echo=FALSE}
+plot(perf, col = "royalblue", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2),
+     main = "ROC curve for sentiment")
+plot(perf2, col = "tomato", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+plot(perf3, col = "darkseagreen", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+plot(perf4, col = "yellow", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+abline(a = 0, b = 1, lwd = 2, lty = 2)
+grid()
+```
+
+AUC 面積 (高於前次的0.9093764)
+
+```{r, echo=FALSE}
+perf.auc4@y.values[[1]]
+```
+
+相同的測試句，Word2Vec model的預測結果為 0: negative (預測正確!)
+
+```{r}
+predict(glmnet.fit4, as.matrix(documentWord2Vec_all(myreview)), type = 'class')[,1]
+```
+
+***
+
+* #### __Optimized model __
+
+上述都使用邏輯迴歸的方法，從ROC curve 黃色線可以看出 Word2Vec model 表現已經很不錯了，再者，它使用的維度只有500。因此，接下來利用不同的演算法於 Word2Vec model 上試試，以下是其他演算法的表現
+
+使用 e1071 套件 naiveBayes (laplace = 1)
+
+```{r, echo=FALSE}
+# naive Bayes
+acc.model_nb$overall[1]
+```
+
+使用 kernlab 套件 ksvm (kernel = "rbfdot")
+
+```{r, echo=FALSE}
+# SVM
+acc.model_svm$overall[1]
+```
+
+使用 randomForest 套件 randomForest (ntree = 500, mtry = 500)
+
+```{r, echo=FALSE}
+# random Forest
+acc.model_rf$overall[1]
+```
+
+從以上發現 SVM + Word2Vec model 的 Accuracy 是目前最高的，接下來利用 Cost 參數來優化 model。下圖是不同 Cost 參數執行的結果，可看出 C=3 時可以得到最佳的 Accuracy (0.8636)
+
+```{r, echo=FALSE}
+# 繪圖
+ggplot(performance, aes(x = C, y = Accuracy)) +
+  scale_x_continuous(breaks = performance$C) +
+  geom_hline(yintercept = max(performance$Accuracy), color = 'royalblue', linetype = "dotdash") +
+  annotate("text", label = max(performance$Accuracy), color = "royalblue", size = 3.5, 
+           fontface = "bold", x = performance[performance$Accuracy == max(performance$Accuracy), 'C'], 
+           y = max(performance$Accuracy)*1.001) +
+  geom_point() + geom_line() + labs(title = "SVM for sentiment")  
+```
+
+ksvm (kernel = "rbfdot", C = 3) 預測得到的 Confusion Matrix 如下，Accuracy : 0.8636 (最高)
+
+```{r, echo=FALSE}
+acc.svm_BEST
+```
+
+繪製 ROC curve (黑色線)，超越其他色線
+
+```{r, echo=FALSE}
+plot(perf, col = "royalblue", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2),
+     main = "ROC curve for sentiment")
+plot(perf2, col = "tomato", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+plot(perf3, col = "darkseagreen", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+plot(perf4, col = "yellow", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+plot(perf5, col = "black", lwd = 2, yaxis.las = 1, yaxis.at = seq(0, 1, by = 0.2), add = T)
+abline(a = 0, b = 1, lwd = 2, lty = 2)
+grid()
+```
+
+AUC 面積 (最大)
+
+```{r, echo=FALSE}
+perf.auc5@y.values[[1]]
+```
+
+***
+
+* #### __Summary __
+
+試著將以上執行結果彙整(如下表)，可以發現傳統向量空間模型(Bag of words、Tf-idf)的表現有一定水準，不過必須透過 labeled 資料進行訓練、建模，另外，高維度也是不可避免的，高稀疏值雖可設定刪除，但也會影響準確率。Word2Vec 方法則可利用 labeled 和 unlabeled 資料生成參照的 word vectors，參照資料越多、準確率也可望提升(參考 ROC curve 綠、黃、黑)，另外，維度的設定也可兼顧運算成本與效能。這次練習設定的維度為500，嘗試3種不同的演算法，發現 Word2Vec + SVM 的表現不俗(比一開始的logistic regression還好)，最後試著調整 Cost 參數，得到 C=3 時準確率最佳
+
+```{r, echo=FALSE}
+model <- c('Bag of words','Tf-idf','Word2Vec','Word2Vec','Word2Vec','Word2Vec','Word2Vec','Word2Vec')
+method <- c('logisticRegression','logisticRegression','logisticRegression','logisticRegression','naiveBayes','randomForest','SVM','SVM')
+trainData <- c('labeled','labeled','labeled','labeled+unlabeled','labeled+unlabeled','labeled+unlabeled','labeled+unlabeled','labeled+unlabeled')
+parameter <- c('','','','','','','','C=3')
+accuracy <- c(acc.glmnet_fit$overall[1],acc.glmnet_fit2$overall[1],acc.glmnet_fit3$overall[1],
+              acc.glmnet_fit4$overall[1],acc.model_nb$overall[1],acc.model_rf$overall[1],
+              acc.model_svm$overall[1],acc.svm_BEST$overall[1])
+AUC <- c(perf.auc@y.values[[1]],perf.auc2@y.values[[1]],perf.auc3@y.values[[1]],perf.auc4@y.values[[1]],'','','',perf.auc5@y.values[[1]])
+
+mysummary <- data.frame(model,method,trainData,parameter,accuracy,AUC)
+kable(mysummary)
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Sentiment analysis (polarity)
+    + #### Parts of speech
+    + #### Word2Vec model
+
+

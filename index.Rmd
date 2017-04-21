@@ -14,6 +14,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [movie reviews sentiment analysis - Bag of Words Meets Bags of Popcorn](./movieReviewSentiment.html) --- 
+情感分析 - 電影評論正負極性.
+( *2017-04-22* )
+
+
+***
+
+> __PREVIOUS__
+
 * [extracting the topics with LDA](./stspMailTopics.html) --- 
 使用 LDA 擷取主題 - 以網站意見信箱為例.
 ( *2017-03-14* )
@@ -21,10 +30,6 @@ knitr::opts_chunk$set(echo = TRUE)
 * [text classiﬁcation in opinion mining of the website](./stspMailService.html) --- 
 文本分類應用 - 以網站意見信箱為例.
 ( *2017-03-03* )
-
-***
-
-> __PREVIOUS__
 
 * [thematic maps of Kaohsiung city public bike](./kaoCityBike.html) --- 
 利用 tmap 套件產出主題地圖 - 以高雄市公共腳踏車為例.
