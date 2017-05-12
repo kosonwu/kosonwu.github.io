@@ -14,14 +14,18 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [movie reviews sentiment analysis - Bag of Words Meets Bags of Popcorn](./movieReviewSentiment.html) --- 
-情感分析 - 電影評論正負極性.
-( *2017-04-22* )
+* [sentiment scores of movie reviews](./sentimentAnalysis.html) --- 
+使用 simple matching 分析電影評論情感分數.
+( *2017-05-12* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [movie reviews sentiment analysis - Bag of Words Meets Bags of Popcorn](./movieReviewSentiment.html) --- 
+情感分析 - 電影評論正負極性.
+( *2017-04-22* )
 
 * [extracting the topics with LDA](./stspMailTopics.html) --- 
 使用 LDA 擷取主題 - 以網站意見信箱為例.

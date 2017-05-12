@@ -1,0 +1,249 @@
+---
+title: ""
+date: "2017-05-12"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(sentiment)
+library(dplyr)
+library(plyr)
+library(syuzhet)
+library(ggplot2)
+library(caret)
+library(text2vec)
+library(tm)
+library(wordcloud)
+load(file.path("data", "sentiment", ".RData"))
+```
+
+* ### Sentiment scores of movie reviews 
+
+***
+
+    library(sentiment)
+    library(dplyr)
+    library(plyr)
+    library(syuzhet)
+    library(ggplot2)
+    library(caret)
+    library(text2vec)
+    library(tm)
+    library(wordcloud)
+    
+***
+
+情感分析除了分析極性(polarity)，情緒(emotion)分數也是一個重要指標。<a href="movieReviewSentiment.html" target="_blank">前次練習</a>使用不同的分類方法處理極性問題，這次主要利用2種套件(syuzhet, sentiment)方法和 lexicon 來完成，一樣使用 <a href="https://www.kaggle.com/c/word2vec-nlp-tutorial/data" target="_blank">labeledTrainData.tsv</a> 的 25000 筆資料，在極性方面，目的是了解方法使用結果與實際的差異，在情緒方面，幫助了解整體影評的情緒比例，最後呈現相關emotion字詞...
+
+***
+
+* #### __Get sentiment polarity / emotion scores __
+
+首先使用 syuzhet 套件，將前處理後的影評資料(含id和reviews欄位的dataframe)透過以下方法，擷取每則 review 的 polarity 分數，這裡使用4種lexicons方法(nrc, bing, afinn & syuzhet)
+
+```{r, eval=FALSE}
+# 將文件斷句, 加總取得每文件的sentiment polarity
+sentimentDocAll <- function(df){
+  emo.m = ddply(df, .(id), function(x) {
+    s_v = get_sentences(x$review2)
+    s_v = as.character(s_v)
+    m1 = sum(get_sentiment(s_v, method= 'nrc'))
+    m2 = sum(get_sentiment(s_v, method= 'bing'))
+    m3 = sum(get_sentiment(s_v, method= 'afinn'))
+    m4 = sum(get_sentiment(s_v, method= 'syuzhet'))
+    return(cbind(nrc = m1, bing = m2, afinn = m3, syuzhet = m4))
+  })
+  return(emo.m)
+}
+```
+
+下面是前10筆 reviews 的 polarity 分數，不同的 lexicons 得分結果也不相同
+
+```{r, echo=FALSE}
+head(sen_All, 10)
+```
+
+4種lexicons方法的分數與頻率分佈，bing 結果分佈的對稱性感覺較好 (原始資料的標籤正負評比為0.5/0.5)
+
+```{r, echo=FALSE}
+# visualize
+lst.Result <- list(reviews_All$nrc, reviews_All$bing, reviews_All$afinn, reviews_All$syuzhet)
+names.Result <- c('nrc ', 'bing ', 'afinn ', 'syuzhet ')
+
+par(mfrow = c(2, 2))
+for (i in 1:length(lst.Result)) {
+  plot(
+    table(lst.Result[[i]]),
+    main = names.Result[i],
+    type = 'h',
+    ylab = 'Freq.',
+    xlab = 'Score',
+    col = "royalblue",
+    lwd = 10
+  )
+  # v:垂直,h:水平
+  abline(v = 0, col = 'red')
+}
+```
+
+
+除了 polarity 分數，套件也提供 get_nrc_sentiment 方法可以得到 <a href="http://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm" target="_blank">NRC lexicon</a> 的 emotions 分數，以下方法計算每個句子的 emotions 分數
+
+```{r, eval=FALSE}
+# 裂解文件成句,取得每句emo分數
+nrcEmotionSentence <- function(df){
+  emo.m = ddply(df, .(id), function(x) {
+    s_v = get_sentences(x$review2)
+    s_v = as.character(s_v)
+    emo = get_nrc_sentiment(s_v)
+    return(cbind(s_v, emo))
+  })
+  return(emo.m)
+}
+```
+
+前10個句子的 emotions 得分，可看出除了 negative 和 positive，NRC 將 emotions 分成8種(anger, anticipation, disgust, fear, joy, sadness & surprise)
+
+```{r, echo=FALSE}
+head(sen_emo[,-2], 10)
+```
+
+***
+
+接著利用 sentiment 套件，classify_polarity 方法可以幫助得到每則 review 的 positive 和 negative (前10筆如下)，為了與原始資料的標籤(0:負評,1:正評)比較，採用 POS/NEG 大於1者為正評的規則，反之為負評
+
+```{r, echo=FALSE}
+head(movie_reviews.pol, 10)
+```
+
+classify_emotion 方法可幫助得到每則 review 的 emotions 分數，sentiment 套件將 emotions 分成6種(anger, disgust, fear, joy, sadness & surprise)，每則 review 對應一個 BEST_FIT emotion
+
+```{r, echo=FALSE}
+head(movie_reviews.emo, 10)
+```
+
+***
+
+* #### __Class-wise accuracy __
+
+計算完每則 review 的 polarity 分數，自訂規則為得分小於0者屬於負評:0，反之為正評:1。接著與原始資料的標籤進行比對，syuzhet 套件4種 lexicons 方法的 Accuracy 如下，其中以 Bing Liu lexicon 的 0.72544 為最高
+
+```{r}
+nrc_accuracy <- confusionMatrix(ifelse(reviews_All$nrc < 0 , 0, 1), reviews_All$sentiment, positive = '1')
+bing_accuracy <- confusionMatrix(ifelse(reviews_All$bing < 0 , 0, 1), reviews_All$sentiment, positive = '1')
+afinn_accuracy <- confusionMatrix(ifelse(reviews_All$afinn < 0 , 0, 1), reviews_All$sentiment, positive = '1')
+syuzhet_accuracy <- confusionMatrix(ifelse(reviews_All$syuzhet < 0 , 0, 1), reviews_All$sentiment, positive = '1')
+# Accuracy比較
+as.data.frame(list(nrc = nrc_accuracy$overall[1], bing = bing_accuracy$overall[1], 
+                   afinn = afinn_accuracy$overall[1], syuzhet = syuzhet_accuracy$overall[1]))
+```
+
+sentiment 套件所得的 polarity 與原始資料的標籤比對，得到 Accuracy: 0.69164
+
+```{r}
+acc_sen <- confusionMatrix(sen_polarity, reviews_All$sentiment, positive = '1')
+acc_sen$overall[1]
+```
+
+此外，比較一下和 sentiment 套件結果的 cosine 相似度，發現 syuzhet 方法應用在這資料上與 sentiment 套件結果有約 0.83 的相似度
+
+```{r}
+# 與 sentiment套件polarity 結果相似度比較
+nrc_sim = sim2(x = matrix(ifelse(reviews_All$nrc < 0 , 0, 1), 1), 
+               y = matrix(sen_polarity, 1), method = "cosine", norm = "l2")
+bing_sim = sim2(x = matrix(ifelse(reviews_All$bing < 0 , 0, 1), 1), 
+                y = matrix(sen_polarity, 1), method = "cosine", norm = "l2")
+afinn_sim = sim2(x = matrix(ifelse(reviews_All$afinn < 0 , 0, 1), 1), 
+                 y = matrix(sen_polarity, 1), method = "cosine", norm = "l2")
+syuzhet_sim = sim2(x = matrix(ifelse(reviews_All$syuzhet < 0 , 0, 1), 1), 
+                   y = matrix(sen_polarity, 1), method = "cosine", norm = "l2")
+
+as.data.frame(list(nrc = nrc_sim, bing = bing_sim, afinn = afinn_sim, syuzhet = syuzhet_sim))
+```
+
+***
+
+* #### __Emotions dashboard __
+
+由於原始資料並無 emotion 的標籤可供比對，無法得知確切的 Accuracy，不過繪出整體 reviews 的情緒比例對於參考是有幫助的，以下是NRC方法結果下的8種情緒比例
+
+```{r, echo=FALSE}
+ggplot(nrc_emotion, aes(x = Var1 , y = Freq)) +
+  geom_bar(stat = "identity", fill = brewer.pal(8, "Dark2")) +
+  labs(title = "emotions analysis of movie reviews on NRC lexicon", x = 'emotion', y = 'percentage') +
+  theme(legend.title =  element_blank()) +
+  geom_text(aes(label = round(Freq, 3)), vjust = 1.5, colour = "white", 
+            position = position_dodge(.9), size = 3)
+```
+
+sentiment 套件方法結果的6種情緒比例，joy 的相對比非常的高
+
+```{r, echo=FALSE}
+ggplot(sen_emotion, aes(x = Var1 , y = Freq)) +
+  geom_bar(stat = "identity", fill = brewer.pal(6, "Set1")) +
+  labs(title = "emotions analysis of movie reviews on sentiment package", x = 'emotion', y = 'percentage') +
+  theme(legend.title =  element_blank()) +
+  geom_text(aes(label = round(Freq, 3)), vjust = 1.5, colour = "white", 
+            position = position_dodge(.9), size = 3)
+```
+
+此外，為了定義每則 review 所屬的 emotion，自訂規則採分數最高的第一位者得，此做法為方便接下來繪製的情緒字雲
+
+```{r, eval=FALSE}
+# BestFitEmotion
+bestFitEmotion <- function(df){
+  fitemo.m = ddply(df, .(id_v), function(x) {
+    rmax = which(x[-1]==max(x[-1]))[1]
+    fitemo = colnames(x[-1])[rmax]
+    return(fitemo)
+  })
+  return(fitemo.m)
+}
+```
+
+```{r, echo=FALSE}
+head(doc_emo2[,1:9])
+```
+
+最後，將 syuzhet 套件 get_nrc_sentiment 方法的結果(如上)，結合上述 bestFitEmotion 函數，每一則 review 就有特定的 emotion 標籤，之後再利用 tm 與 wordcloud 套件產出NRC 8種情緒的字雲
+
+```{r, echo=FALSE}
+# NRC emo字雲
+emoWordCloud(reviews_All2[,c('review2','nrcEmo')], "Dark2")
+```
+
+***
+
+利用 sentiment 套件方法的結果，產出的6種情緒字雲
+
+```{r, echo=FALSE}
+# sentiment emo字雲
+emoWordCloud(reviews_All2[,c('review2','senEmo')], "Set1")
+```
+
+***
+
+* #### __Summary __
+
+這次練習主要focus在 syuzhet 和 sentiment 套件，利用 lexicons 進行簡單的匹對，找出每一則 review 所屬的極性，之後再與原始資料的標籤值比對，得到以下的結果。從結果看來 movie reviews 的資料應用 simple matching lexicons 方法所得到的 accuracy 可以比 sentiment 套件的 naive Bayes 方法還要好，例如使用 Bing Liu lexicon 得到的 0.72544，其他 lexicons 的 accuracy 也有一定的準度(雖然不是很高)，這也顯示如果在沒有充足訓練資料前提下分析情感，simple matching 不失為一種選擇考量。在 emotions 分析上，雖然沒有標籤資料佐證準度，透過圖表方式有助於整體資料情緒的解讀，最後透過字雲，更將整體影評的情緒關鍵字濃縮呈現
+
+```{r, echo=FALSE}
+package <- c('syuzhet','','','','sentiment')
+lexicon <- c('nrc','bing','afinn','syuzhet','Janyce Wiebe\'s subjectivity')
+method <- c('simple matching','simple matching','simple matching','simple matching','naive Bayes')
+accuracy <- c(nrc_accuracy$overall[1], bing_accuracy$overall[1], afinn_accuracy$overall[1], syuzhet_accuracy$overall[1], acc_sen$overall[1])
+
+mysummary <- data.frame(package, lexicon, method, accuracy)
+kable(mysummary)
+```
+
+***
+
+* ### Lessons Learned:
+    + #### Sentiment analysis (polarity, emotion)
+    + #### syuzhet, sentiment packages

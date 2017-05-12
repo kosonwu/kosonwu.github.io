@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ### About
 
-Welcome to practice in R, the personal website for Koson Wu. I am a beginner, and interesting in aspects of data science. 
+Welcome to practice in R, the personal website for Koson Wu (吳克松). I am a beginner, and interesting in aspects of data science. 
 
 This is the start of my own journey learning R.
 
