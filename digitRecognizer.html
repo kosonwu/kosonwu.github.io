@@ -323,7 +323,7 @@ performance &lt;-<span class="st"> </span><span class="kw">startDL</span>(<span 
 ## 2 0.004856237   0.9697809 0.004449035  0.9797737</code></pre>
 <hr />
 <ul>
-<li><h4 id="experiments-dnn-new-features"><strong>Experiments (DNN + New Features) </strong></h4></li>
+<li><h4 id="experiments-dnn-feature-engineering"><strong>Experiments (DNN + Feature Engineering) </strong></h4></li>
 </ul>
 <p>由於上面所得到accuracy相近，接下來繼續透過基本CV方法來增加資料的features，看看能否有所改善。首先，增加avgBlock函式，針對所傳入的matrix進行block的平均，以4x4 grid為例，將可以得到49個features (784/16)</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># 平均block值, default 2x2 grid</span>
@@ -392,7 +392,7 @@ performance3 &lt;-<span class="st"> </span><span class="kw">startDL</span>(<span
 ## 2 0.004694435   0.9711052 0.004509689  0.9815796</code></pre>
 <hr />
 <ul>
-<li><h4 id="experiments-dnn-new-features-auto-encoder"><strong>Experiments (DNN + New Features + Auto-Encoder) </strong></h4></li>
+<li><h4 id="experiments-dnn-feature-engineering-auto-encoder"><strong>Experiments (DNN + Feature Engineering + Auto-Encoder) </strong></h4></li>
 </ul>
 <p>前面提到H2O有支援Auto-Encoder，將autoencoder參數設為True即可使用，為了稍後繪圖查看，先自訂1層hidden layer 2個nodes，activation 參數設為Tanh(-1至1之間)</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">y &lt;-<span class="st"> &quot;label&quot;</span>

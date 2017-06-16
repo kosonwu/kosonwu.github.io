@@ -151,7 +151,7 @@ performance
 
 ***
 
-* #### __Experiments (DNN + New Features) __
+* #### __Experiments (DNN + Feature Engineering) __
 
 由於上面所得到accuracy相近，接下來繼續透過基本CV方法來增加資料的features，看看能否有所改善。首先，增加avgBlock函式，針對所傳入的matrix進行block的平均，以4x4 grid為例，將可以得到49個features (784/16)
 
@@ -254,7 +254,7 @@ performance3
 
 ***
 
-* #### __Experiments (DNN + New Features + Auto-Encoder) __
+* #### __Experiments (DNN + Feature Engineering + Auto-Encoder) __
 
 前面提到H2O有支援Auto-Encoder，將autoencoder參數設為True即可使用，為了稍後繪圖查看，先自訂1層hidden layer 2個nodes，activation 參數設為Tanh(-1至1之間)
 
