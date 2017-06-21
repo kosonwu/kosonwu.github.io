@@ -14,10 +14,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
+* [convolutional neural networks (CNN) on the MNIST dataset](./kerasCNN.html) --- 
+利用Keras實作CNN於手寫數字的辨識.
+( *2017-06-21* )
+
 * [handwritten digits recognizer with deep learning - MNIST Data](./digitRecognizer.html) --- 
 利用H2O深度學習DNN於手寫數字的辨識.
 ( *2017-06-15* )
-
 
 ***
 
