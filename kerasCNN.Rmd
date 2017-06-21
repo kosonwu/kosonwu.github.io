@@ -162,7 +162,7 @@ cat('Test accuracy:', scores[[2]], '\n')
 cat('Test loss:', scores[[1]], '\n')
 ```
 
-繪出迭代結果(kerasCNN)，本次實驗model與validation_data間預測誤差，在 accuracy 和 loss 都出現在第13次，表示此時model預測吻合度最佳
+繪出迭代結果(kerasCNN)，本次實驗訓練與測試間預測誤差最小，在 accuracy 和 loss 都出現在第13次，表示此時model預測吻合度佳
 
 ```{r, echo=FALSE}
 # Plot
