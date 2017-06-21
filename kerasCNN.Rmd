@@ -199,7 +199,7 @@ summary(model_from_yaml(cnn_model))
 
 ***
 
-隨選8個圖檔繪製，然後再以model預測驗證...Good, 結果一致
+繪出8個隨選圖檔，然後再以model預測驗證...Good, 結果一致
 
 ```{r}
 #實際測試,隨選8個數字
