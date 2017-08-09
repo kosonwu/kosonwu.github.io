@@ -19,9 +19,8 @@ library(ggplot2)
 library(gridExtra)
 library(dplyr)
 
-#load(file.path("data", "digit_recognizer", "keras3.RData"))
+load(file.path("data", "identify_the_digit", "mysummary.RData"))
 
-#model = load_model_hdf5(file.path("data", "digit_recognizer", "kerasCNN"))
 ```
 
 * ### generative adversarial networks (GAN) on the MNIST dataset 
@@ -563,6 +562,11 @@ plot(history_d)
 * #### __Summary __
 
 透過這次GAN的實作，學習到生成對抗模型的運作，雖然 Generator 和 Discriminator 參數的拿捏和設計沒有絕對，不過從這次實驗結果來看，Discriminator 參數若小於 Generator 很多時，在 Pre-training 設計上似乎比較寬鬆(如 Model 2)，比較不易產生崩潰問題，不過也因為 Discriminator 參數少，測試資料結果波動較大，在相同的 epochs 下，其辨別能力也比較慢達到0.5。而 Discriminator 參數若大於 Generator 很多時，隨機生成圖似乎較容易出現雛型，不過辨別能力一樣比較慢達到0.5，如 Model 3。當 Generator 和 Discriminator 參數增加且參數比例拉近時(如 Model 4)，訓練學習成效似乎比較好，不過在 Pre-training 時也相對敏感，如 Model 5 和 6 出現學習崩潰。
+
+```{r, echo=FALSE}
+kable(mysummary)
+```
+
 
 ***
 
