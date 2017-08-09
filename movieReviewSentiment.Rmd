@@ -220,9 +220,9 @@ predict(glmnet.fit2, normalizeTFIDF(dtm_myreview), type = 'class')[,1]
 
 ***
 
-* #### __Word2Vec model __
+* #### __GloVe model __
 
-第三種作法使用 Word2Vec，利用前面23908個詞彙產生term-co-occurence matrix (TCM)、建立 word vectors (size 設定為500)
+第三種作法使用 GloVe，利用前面23908個詞彙產生term-co-occurence matrix (TCM)、建立 word vectors (size 設定為500)
 
 ```{r, eval=FALSE}
 vectorizer_tcm <- vocab_vectorizer(vocab, grow_dtm = FALSE, skip_grams_window = 5)
@@ -249,7 +249,7 @@ dim(word_vectors)
 dim(train.word2vec)
 ```
 
-Word2Vec 預測得到的 Confusion Matrix 如下，Accuracy : 0.8364 (比前2次還低)
+GloVe 預測得到的 Confusion Matrix 如下，Accuracy : 0.8364 (比前2次還低)
 
 ```{r, echo=FALSE}
 acc.glmnet_fit3
@@ -272,7 +272,7 @@ AUC 面積 (低於前2次的表現)
 perf.auc3@y.values[[1]]
 ```
 
-相同的測試句，Word2Vec model的預測結果為 0: negative (預測正確!)
+相同的測試句，GloVe model的預測結果為 0: negative (預測正確!)
 
 ```{r}
 predict(glmnet.fit3, as.matrix(documentWord2Vec(myreview)), type = 'class')[,1]
@@ -280,9 +280,9 @@ predict(glmnet.fit3, as.matrix(documentWord2Vec(myreview)), type = 'class')[,1]
 
 ***
 
-* #### __Word2Vec model including unlabeledTrainData __
+* #### __GloVe model including unlabeledTrainData __
 
-雖然 Word2Vec 目前的表現在上述三種中是最差的，不過它使用的維度(500)在運算效能上有優勢，加上目前都只使用了 labeledTrainData.tsv 進行訓練(25000筆 * 0.7)，另外還有 unlabeledTrainData.tsv (50000筆)尚未利用。
+雖然 GloVe 目前的表現在上述三種中是最差的，不過它使用的維度(500)在運算效能上有優勢，加上目前都只使用了 labeledTrainData.tsv 進行訓練(25000筆 * 0.7)，另外還有 unlabeledTrainData.tsv (50000筆)尚未利用。
 
 這次合併2個檔案，相同的Preprocessing，產出新的 word_vectors 如下，可以發現參照的字詞由 23908 變成 33824
 
@@ -296,7 +296,7 @@ dim(word_vectors_all)
 dim(train.word2vec_all)
 ```
 
-這次 Word2Vec 預測得到的 Confusion Matrix 如下，Accuracy : 0.8513 (明顯比前次 0.8364 高)
+這次 GloVe 預測得到的 Confusion Matrix 如下，Accuracy : 0.8513 (明顯比前次 0.8364 高)
 
 ```{r, echo=FALSE}
 acc.glmnet_fit4
@@ -320,7 +320,7 @@ AUC 面積 (高於前次的0.9093764)
 perf.auc4@y.values[[1]]
 ```
 
-相同的測試句，Word2Vec model的預測結果為 0: negative (預測正確!)
+相同的測試句，GloVe model的預測結果為 0: negative (預測正確!)
 
 ```{r}
 predict(glmnet.fit4, as.matrix(documentWord2Vec_all(myreview)), type = 'class')[,1]
@@ -330,7 +330,7 @@ predict(glmnet.fit4, as.matrix(documentWord2Vec_all(myreview)), type = 'class')[
 
 * #### __Optimized model __
 
-上述都使用邏輯迴歸的方法，從ROC curve 黃色線可以看出 Word2Vec model 表現已經很不錯了。因此，接下來利用不同的演算法於 Word2Vec model 上試試，以下是其他演算法的表現
+上述都使用邏輯迴歸的方法，從ROC curve 黃色線可以看出 GloVe model 表現已經很不錯了。因此，接下來利用不同的演算法於 GloVe model 上試試，以下是其他演算法的表現
 
 使用 e1071 套件 naiveBayes (laplace = 1)
 
@@ -353,7 +353,7 @@ acc.model_svm$overall[1]
 acc.model_rf$overall[1]
 ```
 
-從以上發現 SVM + Word2Vec model 的 Accuracy 是目前最高的，接下來利用 Cost 參數來優化 model。下圖是不同 Cost 參數執行的結果，可看出 C=3 時可以得到最佳的 Accuracy (0.8636)
+從以上發現 SVM + GloVe model 的 Accuracy 是目前最高的，接下來利用 Cost 參數來優化 model。下圖是不同 Cost 參數執行的結果，可看出 C=3 時可以得到最佳的 Accuracy (0.8636)
 
 ```{r, echo=FALSE}
 # 繪圖
@@ -395,10 +395,10 @@ perf.auc5@y.values[[1]]
 
 * #### __Summary __
 
-試著將以上執行結果彙整(如下表)，可以發現傳統向量空間模型(Bag of words、Tf-idf)的表現有一定水準，不過必須透過 labeled 資料進行訓練、建模，另外，高維度也是不可避免的，高稀疏值雖可設定刪除，但也會影響準確率。Word2Vec 方法則可利用 labeled 和 unlabeled 資料生成參照的 word vectors，參照資料越多、準確率也可望提升(參考 ROC curve 綠、黃、黑)，另外，維度的設定也可兼顧運算成本與效能。這次練習設定的維度為500，嘗試3種不同的演算法，發現 Word2Vec + SVM 的表現不俗(比一開始的logistic regression還好)，最後試著調整 Cost 參數，得到 C=3 時準確率最佳
+試著將以上執行結果彙整(如下表)，可以發現傳統向量空間模型(Bag of words、Tf-idf)的表現有一定水準，不過必須透過 labeled 資料進行訓練、建模，另外，高維度也是不可避免的，高稀疏值雖可設定刪除，但也會影響準確率。GloVe 方法則可利用 labeled 和 unlabeled 資料生成參照的 word vectors，參照資料越多、準確率也可望提升(參考 ROC curve 綠、黃、黑)，另外，維度的設定也可兼顧運算成本與效能。這次練習設定的維度為500，嘗試3種不同的演算法，發現 GloVe + SVM 的表現不俗(比一開始的logistic regression還好)，最後試著調整 Cost 參數，得到 C=3 時準確率最佳
 
 ```{r, echo=FALSE}
-model <- c('Bag of words','Tf-idf','Word2Vec','Word2Vec','Word2Vec','Word2Vec','Word2Vec','Word2Vec')
+model <- c('Bag of words','Tf-idf','GloVe','GloVe','GloVe','GloVe','GloVe','GloVe')
 method <- c('logisticRegression','logisticRegression','logisticRegression','logisticRegression','naiveBayes','randomForest','SVM','SVM')
 trainData <- c('labeled','labeled','labeled','labeled+unlabeled','labeled+unlabeled','labeled+unlabeled','labeled+unlabeled','labeled+unlabeled')
 parameter <- c('','','','','','','','C=3')
@@ -416,6 +416,6 @@ kable(mysummary)
 * ### Lessons Learned:
     + #### Sentiment analysis (polarity)
     + #### Parts of speech
-    + #### Word2Vec model
+    + #### GloVe model
 
 
