@@ -1,0 +1,397 @@
+---
+title: ""
+date: "2017-09-26"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(data.table)
+library(tidytext)
+library(text2vec)
+library(caret)
+library(doSNOW)
+library(SnowballC)
+library(glmnet)
+library(ROCR)
+library(plyr)
+library(ggplot2)
+library(keras)
+library(gridExtra)
+
+load(file.path("data", "movie_reviews","epoch30.RData"))
+
+```
+
+* ### implementation of MLP, RNN and CNN on movie reviews sentiment analysis 
+
+***
+
+    library(data.table)
+    library(tidytext)
+    library(text2vec)
+    library(caret)
+    library(doSNOW)
+    library(SnowballC)
+    library(glmnet)
+    library(ROCR)
+    library(plyr)
+    library(ggplot2)
+    library(keras)
+    library(gridExtra)
+    
+***
+
+keras 套件有提供 IMDB 資料集、搭配 pad_sequences 方法能實作 word embedding，不過我將延用<a href="movieReviewSentiment.html" target="_blank">前次練習</a>所留下的資料集與參照字詞(字典)來實作。方法主要為MLP、RNN及CNN，參照字詞包括從訓練資料處理後的23908個詞彙、包含unlabeledTrainData.tsv處理後的33824個詞彙以及從中各取詞頻前3000、5000個詞彙，分別進行實驗。由於使用本身的參照字詞，我建立以下函式等同 pad_sequences 作用，將每一則 review 詞彙轉成數字、截長補短，生成固定長度的矩陣，方便後續 model 的建立
+
+```{r, eval=FALSE}
+# 截長補短,固定長度
+makeFixedLength <- function(reviews, len = 150, vocabs) {
+  tok.m = laply(reviews, function(rv, len, vocabs) {
+    tokens = space_tokenizer(rv)[[1]]
+    #只留有在字典的詞
+    digitTK <- match(tokens, vocabs)
+    digitTK <- digitTK[!is.na(digitTK)]
+    
+    TL <- length(digitTK)
+    if(TL==0)
+      rep(0, len)
+    else if(TL < len)
+      c(rep(0, len - TL), digitTK)
+    else if(TL == len)
+      digitTK
+    else
+      digitTK[-c(1:(TL - len))]
+    
+  }, len, vocabs)
+  
+  return(matrix(tok.m, nrow(tok.m)))
+}
+```
+
+***
+
+epochs 參數設定30，每則 review 詞的長度自訂150，詞向量維度自訂128，接著將 reviews 依各自參照字詞生成固定長度的矩陣
+
+```{r, eval=FALSE}
+epochs <- 30
+maxlen <- 150
+word_dim <- 128
+
+# use 33824 vocabs of all reviews
+train_tokens_av <- makeFixedLength(train$review3, maxlen, vocab_all$vocab$terms)
+test_tokens_av <- makeFixedLength(test$review3, maxlen, vocab_all$vocab$terms)
+max_features_av <- length(vocab_all$vocab$terms)
+
+
+vocab_freq <- setorder(vocab_all$vocab, -terms_counts)
+# use top freq 3000 vocabs of all reviews
+vocab_freq3000 <- vocab_freq[1:3000,]
+train_tokens_av3000 <- makeFixedLength(train$review3, maxlen, vocab_freq3000$terms)
+test_tokens_av3000 <- makeFixedLength(test$review3, maxlen, vocab_freq3000$terms)
+max_features_av3000 <- length(vocab_freq3000$terms)
+
+# use top freq 5000 vocabs of all reviews
+vocab_freq5000 <- vocab_freq[1:5000,]
+train_tokens_av5000 <- makeFixedLength(train$review3, maxlen, vocab_freq5000$terms)
+test_tokens_av5000 <- makeFixedLength(test$review3, maxlen, vocab_freq5000$terms)
+max_features_av5000 <- length(vocab_freq5000$terms)
+#-----------------------------
+
+# use 23908 vocabs of train reviews 
+train_tokens_tv <- makeFixedLength(train$review3, maxlen, vocab$vocab$terms)
+test_tokens_tv <- makeFixedLength(test$review3, maxlen, vocab$vocab$terms)
+max_features_tv <- length(vocab$vocab$terms)
+
+
+vocab_freq <- setorder(vocab$vocab, -terms_counts)
+# use top freq 3000 vocabs of train reviews 
+vocab_freq3000 <- vocab_freq[1:3000,]
+train_tokens_tv3000 <- makeFixedLength(train$review3, maxlen, vocab_freq3000$terms)
+test_tokens_tv3000 <- makeFixedLength(test$review3, maxlen, vocab_freq3000$terms)
+max_features_tv3000 <- length(vocab_freq3000$terms)
+
+# use top freq 5000 vocabs of train reviews 
+vocab_freq5000 <- vocab_freq[1:5000,]
+train_tokens_tv5000 <- makeFixedLength(train$review3, maxlen, vocab_freq5000$terms)
+test_tokens_tv5000 <- makeFixedLength(test$review3, maxlen, vocab_freq5000$terms)
+max_features_tv5000 <- length(vocab_freq5000$terms)
+```
+
+MLP model 設定如下，避免過度擬合dropout自訂0.5，隱藏層自訂6層，學習率自訂0.0015，衰退率自訂0.05
+
+```{r, eval=FALSE}
+# train MLP
+fitMLP <- function(max_features, train_tokens, test_tokens) {
+  model <- keras_model_sequential()
+  model %>%
+    layer_embedding(input_dim = max_features, output_dim = word_dim, input_length = maxlen) %>%
+    layer_dropout(0.5) %>%
+    layer_flatten() %>%
+    layer_dense(units = 1024, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 1024, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 512, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 512, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 128, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 128, activation = 'relu') %>%
+    layer_dense(units = 1, activation = 'sigmoid')
+  
+  model %>% compile(
+    loss = "binary_crossentropy",
+    optimizer = optimizer_adam(lr = 0.0015, decay = 0.05),
+    metrics = "accuracy"
+  )
+  
+  MLP_result <- model %>%
+    fit(train_tokens, train$sentiment, batch_size = 100, epochs = epochs,
+        validation_data = list(test_tokens, test$sentiment)
+    )
+  return(MLP_result)
+}
+```
+
+RNN model 參數設定大致相同，除了將平坦層換成output為32個神經元的RNN層...
+
+```{r, eval=FALSE}
+# train RNN
+fitRNN <- function(max_features, train_tokens, test_tokens) {
+  model <- keras_model_sequential()
+  model %>%
+    layer_embedding(input_dim = max_features, output_dim = word_dim, input_length = maxlen) %>%
+    layer_dropout(0.5) %>%
+    layer_simple_rnn(units = 32) %>%
+    layer_dense(units = 1024, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 1024, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 512, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 512, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 128, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 128, activation = 'relu') %>%
+    layer_dense(units = 1, activation = 'sigmoid')
+  
+  model %>% compile(
+    loss = "binary_crossentropy",
+    optimizer = optimizer_adam(lr = 0.0015, decay = 0.05),
+    metrics = "accuracy"
+  )
+  
+  RNN_result <- model %>%
+    fit(train_tokens, train$sentiment, batch_size = 100, epochs = epochs,
+        validation_data = list(test_tokens, test$sentiment)
+    )
+  return(RNN_result)
+}
+```
+
+CNN model 參數設定也大致相同，除了在平坦層前多加了一維的卷積層...
+
+```{r, eval=FALSE}
+# train CNN
+fitCNN <- function(max_features, train_tokens, test_tokens) {
+  model <- keras_model_sequential()
+  model %>%
+    layer_embedding(input_dim = max_features, output_dim = word_dim, input_length = maxlen) %>%
+    layer_dropout(0.5) %>%
+    layer_conv_1d(filters = 64, kernel_size = 4, padding = "valid", activation = "tanh", strides = 1) %>%
+    layer_flatten() %>%
+    layer_dense(units = 1024, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 1024, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 512, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 512, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 128, activation = 'relu') %>%
+    layer_dropout(0.5) %>%
+    layer_dense(units = 128, activation = 'relu') %>%
+    layer_dense(units = 1, activation = 'sigmoid')
+  
+  model %>% compile(
+    loss = "binary_crossentropy",
+    optimizer = optimizer_adam(lr = 0.0015, decay = 0.05),
+    metrics = "accuracy"
+  )
+  
+  CNN_result <- model %>%
+    fit(train_tokens, train$sentiment, batch_size = 100, epochs = epochs,
+        validation_data = list(test_tokens, test$sentiment)
+    )
+  return(CNN_result)
+}
+```
+
+***
+
+* #### __使用所有評論33824個詞彙 __
+
+```{r, eval=FALSE}
+MLP_av <- fitMLP(max_features_av, train_tokens_av, test_tokens_av)
+RNN_av <- fitRNN(max_features_av, train_tokens_av, test_tokens_av)
+CNN_av <- fitCNN(max_features_av, train_tokens_av, test_tokens_av)
+```
+
+在第30次epoch的val_acc，MLP為`r MLP_av$metrics$val_acc[30]`，RNN為`r RNN_av$metrics$val_acc[30]`，CNN為`r CNN_av$metrics$val_acc[30]`。其中以RNN最高，CNN次之，RNN在epoch為5之後就開始收斂現象，不過隨著epoch增加後面有點overfitting感覺，不過MLP的overfitting更明顯
+
+```{r, echo=FALSE}
+p1 <- plot(MLP_av) + labs(title ='MLP') + theme(legend.position="bottom")
+p2 <- plot(RNN_av) + labs(title ='RNN') + theme(legend.position="bottom")
+p3 <- plot(CNN_av) + labs(title ='CNN') + theme(legend.position="bottom")
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+***
+
+* #### __使用所有評論中詞頻前3000個詞彙 __
+
+```{r, eval=FALSE}
+MLP_av3000 <- fitMLP(max_features_av3000, train_tokens_av3000, test_tokens_av3000)
+RNN_av3000 <- fitRNN(max_features_av3000, train_tokens_av3000, test_tokens_av3000)
+CNN_av3000 <- fitCNN(max_features_av3000, train_tokens_av3000, test_tokens_av3000)
+```
+
+在第30次epoch的val_acc，MLP為`r MLP_av3000$metrics$val_acc[30]`，RNN為`r RNN_av3000$metrics$val_acc[30]`，CNN為`r CNN_av3000$metrics$val_acc[30]`。其中以RNN最高，CNN次之，RNN依然是最早收斂，和前次RNN相比較無overfitting現象，不過MLP的overfitting還是相對明顯
+
+```{r, echo=FALSE}
+p1 <- plot(MLP_av3000) + labs(title ='MLP') + theme(legend.position="bottom")
+p2 <- plot(RNN_av3000) + labs(title ='RNN') + theme(legend.position="bottom")
+p3 <- plot(CNN_av3000) + labs(title ='CNN') + theme(legend.position="bottom")
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+***
+
+* #### __使用所有評論中詞頻前5000個詞彙 __
+
+```{r, eval=FALSE}
+MLP_av5000 <- fitMLP(max_features_av5000, train_tokens_av5000, test_tokens_av5000)
+RNN_av5000 <- fitRNN(max_features_av5000, train_tokens_av5000, test_tokens_av5000)
+CNN_av5000 <- fitCNN(max_features_av5000, train_tokens_av5000, test_tokens_av5000)
+```
+
+在第30次epoch的val_acc，MLP為`r MLP_av5000$metrics$val_acc[30]`，RNN為`r RNN_av5000$metrics$val_acc[30]`，CNN為`r CNN_av5000$metrics$val_acc[30]`。其中還是以RNN最高，CNN次之，RNN一樣在epoch為5之後就步入收歛，相較於MLP也較無overfitting現象
+
+```{r, echo=FALSE}
+p1 <- plot(MLP_av5000) + labs(title ='MLP') + theme(legend.position="bottom")
+p2 <- plot(RNN_av5000) + labs(title ='RNN') + theme(legend.position="bottom")
+p3 <- plot(CNN_av5000) + labs(title ='CNN') + theme(legend.position="bottom")
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+小結：從以上實驗結果看來，RNN表現最佳、CNN次之、MLP最差，在model訓練上，RNN收斂最快、較無overfitting現象，MLP的overfitting最明顯。另外，過多的參照字詞overfitting也比較明顯
+
+***
+
+* #### __使用訓練資料23908個詞彙 __
+
+```{r, eval=FALSE}
+MLP_tv <- fitMLP(max_features_tv, train_tokens_tv, test_tokens_tv)
+RNN_tv <- fitRNN(max_features_tv, train_tokens_tv, test_tokens_tv)
+CNN_tv <- fitCNN(max_features_tv, train_tokens_tv, test_tokens_tv)
+```
+
+在第30次epoch的val_acc，MLP為`r MLP_tv$metrics$val_acc[30]`，RNN為`r RNN_tv$metrics$val_acc[30]`，CNN為`r CNN_tv$metrics$val_acc[30]`。其中以RNN最高，CNN次之，RNN還是收斂最快，MLP則最慢，2者隨著epoch增加後面都有點overfitting
+
+```{r, echo=FALSE}
+p1 <- plot(MLP_tv) + labs(title ='MLP') + theme(legend.position="bottom")
+p2 <- plot(RNN_tv) + labs(title ='RNN') + theme(legend.position="bottom")
+p3 <- plot(CNN_tv) + labs(title ='CNN') + theme(legend.position="bottom")
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+***
+
+* #### __使用訓練資料中詞頻前3000個詞彙 __
+
+```{r, eval=FALSE}
+MLP_tv3000 <- fitMLP(max_features_tv3000, train_tokens_tv3000, test_tokens_tv3000)
+RNN_tv3000 <- fitRNN(max_features_tv3000, train_tokens_tv3000, test_tokens_tv3000)
+CNN_tv3000 <- fitCNN(max_features_tv3000, train_tokens_tv3000, test_tokens_tv3000)
+```
+
+在第30次epoch的val_acc，MLP為`r MLP_tv3000$metrics$val_acc[30]`，RNN為`r RNN_tv3000$metrics$val_acc[30]`，CNN為`r CNN_tv3000$metrics$val_acc[30]`。RNN還是最高，CNN次之，MLP依然墊底，相較於其他2者，MLP收斂最慢、overfitting最明顯，RNN在這方面表現最佳
+
+```{r, echo=FALSE}
+p1 <- plot(MLP_tv3000) + labs(title ='MLP') + theme(legend.position="bottom")
+p2 <- plot(RNN_tv3000) + labs(title ='RNN') + theme(legend.position="bottom")
+p3 <- plot(CNN_tv3000) + labs(title ='CNN') + theme(legend.position="bottom")
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+***
+
+* #### __使用訓練資料中詞頻前5000個詞彙 __
+
+```{r, eval=FALSE}
+MLP_tv5000 <- fitMLP(max_features_tv5000, train_tokens_tv5000, test_tokens_tv5000)
+RNN_tv5000 <- fitRNN(max_features_tv5000, train_tokens_tv5000, test_tokens_tv5000)
+CNN_tv5000 <- fitCNN(max_features_tv5000, train_tokens_tv5000, test_tokens_tv5000)
+```
+
+在第30次epoch的val_acc，MLP為`r MLP_tv5000$metrics$val_acc[30]`，RNN為`r RNN_tv5000$metrics$val_acc[30]`，CNN為`r CNN_tv5000$metrics$val_acc[30]`。這次CNN最高，RNN次之，相較於其他2者，這次MLP在epoch為15後才有比較穩定的acc，不過從fitting現象看來屬RNN最佳
+
+```{r, echo=FALSE}
+p1 <- plot(MLP_tv5000) + labs(title ='MLP') + theme(legend.position="bottom")
+p2 <- plot(RNN_tv5000) + labs(title ='RNN') + theme(legend.position="bottom")
+p3 <- plot(CNN_tv5000) + labs(title ='CNN') + theme(legend.position="bottom")
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+小結：從以上實驗結果看來，RNN有2次表現最佳、CNN則有1次，MLP表現依然不如這2者，在model訓練上，RNN收斂最快，CNN較無overfitting現象，MLP的overfitting最明顯。過多的參照字詞overfitting現象還是相對明顯
+
+***
+
+* #### __Summary __
+
+```{r, echo=FALSE}
+MLP_acc <- c(MLP_av$metrics$val_acc[30], MLP_av3000$metrics$val_acc[30], MLP_av5000$metrics$val_acc[30],
+         MLP_tv$metrics$val_acc[30], MLP_tv3000$metrics$val_acc[30], MLP_tv5000$metrics$val_acc[30])
+
+RNN_acc <- c(RNN_av$metrics$val_acc[30], RNN_av3000$metrics$val_acc[30], RNN_av5000$metrics$val_acc[30],
+         RNN_tv$metrics$val_acc[30], RNN_tv3000$metrics$val_acc[30], RNN_tv5000$metrics$val_acc[30])
+
+CNN_acc <- c(CNN_av$metrics$val_acc[30], CNN_av3000$metrics$val_acc[30], CNN_av5000$metrics$val_acc[30],
+         CNN_tv$metrics$val_acc[30], CNN_tv3000$metrics$val_acc[30], CNN_tv5000$metrics$val_acc[30])
+
+MLP_loss <- c(MLP_av$metrics$val_loss[30], MLP_av3000$metrics$val_loss[30], MLP_av5000$metrics$val_loss[30],
+         MLP_tv$metrics$val_loss[30], MLP_tv3000$metrics$val_loss[30], MLP_tv5000$metrics$val_loss[30])
+
+RNN_loss <- c(RNN_av$metrics$val_loss[30], RNN_av3000$metrics$val_loss[30], RNN_av5000$metrics$val_loss[30],
+         RNN_tv$metrics$val_loss[30], RNN_tv3000$metrics$val_loss[30], RNN_tv5000$metrics$val_loss[30])
+
+CNN_loss <- c(CNN_av$metrics$val_loss[30], CNN_av3000$metrics$val_loss[30], CNN_av5000$metrics$val_loss[30],
+         CNN_tv$metrics$val_loss[30], CNN_tv3000$metrics$val_loss[30], CNN_tv5000$metrics$val_loss[30])
+
+vocab_words <- c('33824 words of all reviews','3000 words of all reviews','5000 words of all reviews',
+                 '23908 words of train reviews','3000 words of train reviews','5000 words of train reviews')
+mysummary <- data.frame(vocab_words, MLP_acc, RNN_acc, CNN_acc, MLP_loss, RNN_loss, CNN_loss)
+kable(mysummary)
+```
+
+這次實作MLP、RNN及CNN三種方法在電影評論分類任務上，分別使用了六種的參照字詞，透過 Keras 提供的embedding層將數字轉成向量，RNN在本次實驗上表現最佳，6次之中有5次有最高的accuracy，CNN則有1次，MLP方法在這三種之中表現是最差的。此外，RNN方法在訓練上最快收斂，也較無overfitting，MLP方法訓練收斂最慢、overfitting也相對明顯。在 loss 表現上，CNN則是最小、RNN次之。在參照字詞使用上，使用最多字詞並未有最高的accuracy，也可能造成較明顯的overfitting現象，當然運算成本也相對高，這是一個trade-off問題。
+
+***
+
+* ### Lessons Learned:
+    + #### Recurrent Neural Networks (RNN)
+    + #### Multi-Layer Perceptron (MLP)
+

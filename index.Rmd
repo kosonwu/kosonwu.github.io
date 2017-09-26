@@ -14,14 +14,18 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [generative adversarial networks (GAN) on the MNIST dataset](./kerasGAN.html) --- 
-實作生成對抗網路GAN自動生成手寫數字.
-( *2017-08-08* )
+* [implementation of MLP, RNN and CNN on movie reviews sentiment analysis](./movieReviewCNN.html) --- 
+實作MLP、RNN及CNN於電影評論情感分析.
+( *2017-09-26* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [generative adversarial networks (GAN) on the MNIST dataset](./kerasGAN.html) --- 
+實作生成對抗網路GAN自動生成手寫數字.
+( *2017-08-08* )
 
 * [convolutional neural networks (CNN) on the MNIST dataset](./kerasCNN.html) --- 
 利用Keras實作CNN於手寫數字的辨識.

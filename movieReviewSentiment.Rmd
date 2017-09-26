@@ -44,7 +44,7 @@ load(file.path("data", "movie_reviews", "5.RData"))
     
 ***
 
-情感分析(Sentiment Analysis)是文字探勘的重要應用之一，以下練習使用 <a href="https://www.kaggle.com/c/word2vec-nlp-tutorial/data" target="_blank">Kaggle</a> 提供的資料集，其中 labeledTrainData.tsv 是包含標籤(0:負評,1:正評)的影評資料(25000筆)，unlabeledTrainData.tsv 則是沒有標籤的影評資料(50000筆)，將利用這些資料進行訓練、建模，目的是正確分類出影評所屬的極性 (polarity)。下圖為本次練習的大致流程...
+情感分析(Sentiment Analysis)是文字探勘的重要應用之一，以下練習使用 <a href="https://www.kaggle.com/c/word2vec-nlp-tutorial/data" target="_blank">Kaggle</a> 提供的資料集，其中 labeledTrainData.tsv 是包含標籤(0:負評,1:正評)的影評資料(25000筆)，unlabeledTrainData.tsv 則是沒有標籤的影評資料(50000筆)，將利用這些資料進行訓練、建模，目的是正確分類出影評所屬的極性 (polarity)。下圖為本次練習的大致流程
 
 ![](image/movieReviews.png)
 
