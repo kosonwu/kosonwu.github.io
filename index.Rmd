@@ -14,14 +14,18 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [implementation of MLP, RNN and CNN on movie reviews sentiment analysis](./movieReviewCNN.html) --- 
-實作MLP、RNN及CNN於電影評論情感分析.
-( *2017-09-26* )
+* [CIFAR-10 - Object Recognition using Keras with Tensorflow](./cifar10.html) --- 
+CIFAR-10影像辨識，使用Keras和Tensorflow.
+( *2017-10-12* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [implementation of MLP, RNN and CNN on movie reviews sentiment analysis](./movieReviewCNN.html) --- 
+實作MLP、RNN及CNN於電影評論情感分析.
+( *2017-09-26* )
 
 * [generative adversarial networks (GAN) on the MNIST dataset](./kerasGAN.html) --- 
 實作生成對抗網路GAN自動生成手寫數字.
