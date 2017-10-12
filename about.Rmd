@@ -18,6 +18,6 @@ This is the start of my own journey learning R.
 
 ### bergter@gmail.com
 
-![](image/me.jpg)
+![](image/me2.jpg)
 
 
