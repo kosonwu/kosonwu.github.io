@@ -14,14 +14,17 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [CIFAR-10 - Object Recognition using Keras with Tensorflow](./cifar10.html) --- 
-CIFAR-10影像辨識，使用Keras和Tensorflow.
-( *2017-10-12* )
+* [VOC2012 - Semantic Segmentation using Keras with Tensorflow](./voc2012.html) ---  以 FCN 實現 VOC2012 語義分割，使用Keras和Tensorflow.
+( *2017-11-18* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [CIFAR-10 - Object Recognition using Keras with Tensorflow](./cifar10.html) --- 
+CIFAR-10影像辨識，使用Keras和Tensorflow.
+( *2017-10-12* )
 
 * [implementation of MLP, RNN and CNN on movie reviews sentiment analysis](./movieReviewCNN.html) --- 
 實作MLP、RNN及CNN於電影評論情感分析.
