@@ -14,13 +14,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [VOC2012 - Semantic Segmentation using Keras with Tensorflow](./voc2012.html) ---  以 FCN 實現 VOC2012 語義分割，使用Keras和Tensorflow.
-( *2017-11-18* )
+* [Carvana Image Masking - Semantic Segmentation using Keras](./carvana.html) ---  使用 Keras 影像分割，自動去除 Carvana 影像背景.
+( *2018-04-23* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [VOC2012 - Semantic Segmentation using Keras with Tensorflow](./voc2012.html) ---  以 FCN 實現 VOC2012 語義分割，使用Keras和Tensorflow.
+( *2017-11-18* )
 
 * [CIFAR-10 - Object Recognition using Keras with Tensorflow](./cifar10.html) --- 
 CIFAR-10影像辨識，使用Keras和Tensorflow.

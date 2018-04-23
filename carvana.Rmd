@@ -1,0 +1,622 @@
+---
+title: ""
+date: "2018-04-23"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(keras)
+library(magick)
+library(parallel)
+library(doParallel)
+library(abind)
+library(reticulate)
+library(plyr)
+```
+
+* ### Carvana Image Masking - Semantic Segmentation using Keras
+
+***
+
+    library(keras)
+    library(magick)
+    library(parallel)
+    library(doParallel)
+    library(abind)
+    library(reticulate)
+    library(plyr)
+    
+***
+
+這次實作資料是kaggle去年的競賽 <a href="https://www.kaggle.com/c/carvana-image-masking-challenge" target="_blank">Carvana Image Masking Challenge</a> ，Carvana是一家銷售二手車的公司，拍攝許多高質感的汽車照片，不過在現有的自動去背景方法上，常因反光或背景顏色相似造成誤判，因此希望開發出更有效的方法。這個需求可以結合語意分割技術來應用，從網站下載資料，訓練圖像、mask有5088筆，測試圖像有100064筆。R在處理一般影像，有幾種套件可以使用(ex:magick、EBImage、imager、 OpenImageR...等)，這次實作使用的是magick
+
+***
+
+首先，利用image_read方法載入一張圖來測試，image_background方法把背景設成黑色，image_info查看剛剛載入的圖像資訊
+
+```{r, echo=TRUE}
+#檔名
+jpg_names <- list.files('data/ImageMasking/train', full.names = T)
+mask_names <- list.files('data/ImageMasking/train_masks', full.names = T)
+#讀檔, 背景設為黑色
+jpg <- image_background(image_read(jpg_names[1]), 'black')
+mask <- image_background(image_read(mask_names[1]), 'black')
+image_info(jpg)
+image_info(mask)
+```
+
+***
+
+為使用資料擴增(data augmentation)，自訂以下函式進行影像轉置處理
+
+```{r, eval=FALSE}
+#旋轉,放大,裁切
+rotate_image <- function(jpg, mask, left_lim = -20, right_lim = 20) {
+  
+  if (rnorm(1) < 0) return(list(jpg = jpg, mask = mask))
+  
+  degree <- runif(1, left_lim, right_lim)
+  
+  jpg <- image_rotate(jpg, degree)
+  mask <- image_rotate(mask, degree)
+  
+  original_w <-image_info(jpg)$width
+  original_h <- image_info(jpg)$height
+  
+  zoom <- round((abs(degree)+100)/100 , 2)
+  print(zoom)
+  
+  zoom_w <- round(original_w * zoom, 0)
+  zoom_h <- round(original_h * zoom, 0)
+  
+  jpg <- image_sample(jpg, paste0(zoom_w, 'x', zoom_h, '!'))
+  mask <- image_sample(mask, paste0(zoom_w, 'x', zoom_h, '!'))
+  
+  drop_w <- round((zoom_w - original_w) / 2, 0)
+  drop_h <- round((zoom_h - original_h) / 2, 0)
+  
+  jpg <- image_crop(jpg, paste0(original_w, 'x', original_h, '+', drop_w, '+', drop_h))
+  mask <- image_crop(mask, paste0(original_w, 'x', original_h, '+', drop_w, '+', drop_h))
+  
+  return(list(jpg = jpg, mask = mask))
+}
+
+#水平翻轉
+horizontal_image <- function(jpg, mask){
+  
+  if (rnorm(1) < 0) return(list(jpg = jpg, mask = mask))
+  
+  jpg <- image_flop(jpg)
+  mask <- image_flop(mask)
+  return(list(jpg = jpg, mask = mask))
+}
+
+#亮度,飽和,色相
+modulate_image <- function(img,
+                           brightness_lim = c(100, 140),
+                           saturation_lim = c(90, 130),
+                           hue_lim = c(80, 120)) {
+  
+  
+  if (rnorm(1) < 0) return(img)
+  
+  b_shift <- runif(1, brightness_lim[1], brightness_lim[2])
+  s_shift <- runif(1, saturation_lim[1], saturation_lim[2])
+  h_shift <- runif(1, hue_lim[1], hue_lim[2])
+  
+  img <- image_modulate(img, brightness = b_shift, saturation =  s_shift, hue = h_shift)
+  
+  return(img)
+}
+
+```
+
+繪圖函式
+
+```{r, eval=FALSE}
+#繪圖
+plot_img <- function(obj, title = NA) {
+  obj_w <- NULL
+  obj_h <- NULL
+  obj_img <- obj
+  if(class(obj)=="magick-image"){
+    obj_w <-image_info(obj)$width
+    obj_h <- image_info(obj)$height
+  }
+  #array
+  if(length(dim(obj))==4){
+    obj_w <-dim(obj)[3]
+    obj_h <- dim(obj)[2]
+    obj_img <- obj[1,,,]
+  }
+  if(length(dim(obj))==3 || length(dim(obj))==2){
+    obj_w <-dim(obj)[2]
+    obj_h <- dim(obj)[1]
+  }
+  print(obj_w)
+  print(obj_h)
+  
+  par(mar = rep(0.35, 4))
+  plot(c(0, obj_w), c(0, obj_h), type = "n", xlab = "", ylab = "", axes = F, main = title)
+  rasterImage(obj_img, 0, 0, obj_w , obj_h)
+}
+
+#旋轉,放大,裁切
+img_pair <- rotate_image(jpg, mask)
+plot_img(img_pair$jpg)
+plot_img(img_pair$mask)
+```
+
+應用rotate_image函式，繪出測試圖
+
+![](data/ImageMasking/0320/ini_1.png)
+
+![](data/ImageMasking/0320/ini_2.png)
+
+繪出合成圖
+
+```{r, eval=FALSE}
+#合成
+img_tmp <- image_composite(img_pair$jpg, img_pair$mask, operator = "blend", compose_args = "60")
+plot_img(img_tmp)
+```
+
+![](data/ImageMasking/0320/ini_3.png)
+
+***
+
+為了後續model的input格式，透過以下函式將images轉成array
+
+```{r, eval=FALSE}
+#image轉成array
+img_array <- function(img, h = 224 , w = 224) {
+  img <- image_sample(img, paste0(w, 'x', h, '!'))
+  arr <- array(data = as.numeric(img[[1]]), dim = c(1, h, w, 3))
+  return(arr)
+}
+mask_array <- function(img, h =224, w =224) {
+  img <- image_sample(img, paste0(w, 'x', h, '!'))
+  arr <- array(data = as.numeric(img[[1]]), dim = c(1, h, w, 1))
+  return(arr)
+}
+```
+
+***
+
+競賽中所要求的評估是採dice係數，根據公式自訂loss函式如下
+
+```{r, eval=FALSE}
+# dice metric
+K <- backend()
+dice <- function(y_true, y_pred, smooth = 1.0) {
+  y_true_f <- K$flatten(y_true)
+  y_pred_f <- K$flatten(y_pred)
+  intersection <- K$sum(y_true_f * y_pred_f)
+  result <- (2 * intersection + smooth) /
+    (K$sum(y_true_f) + K$sum(y_pred_f) + smooth)
+  return(result)
+}
+
+dice_bc_loss <- function(y_true, y_pred) {
+  result <- loss_binary_crossentropy(y_true, y_pred) + (1 - dice(y_true, y_pred))
+  return(result)
+}
+```
+
+***
+
+自訂以下model，以resnet50為base model，受到UNet的啟發，因此在172、140、130...等層擷取其輸出層，再透過上採樣、合併的手法，最後輸出224,224,1大小的維度
+
+```{r, eval=FALSE}
+set_ResNet50 <- function(input_shape = c(224, 224, 3), num_classes = 1) {
+  
+  inputs <- layer_input(shape = input_shape)
+  
+  base_model <- application_resnet50(weights = 'imagenet', include_top = FALSE, input_tensor = inputs)
+  
+  base_model$layers <- base_model$layers[1:172]
+  
+  op_7a <- base_model$layers[[172]]$output
+  #7 7 2048
+  
+  op_14a <- base_model$layers[[140]]$output
+  op_14b <- base_model$layers[[130]]$output
+  #14 14  1024
+  
+  op_28a <- base_model$layers[[78]]$output
+  op_28b <- base_model$layers[[68]]$output
+  #28 28 512
+  
+  op_56a <- base_model$layers[[36]]$output %>%
+    layer_zero_padding_2d(padding = list(c(1, 0), c(1, 0)))
+  op_56b <- base_model$layers[[26]]$output %>%
+    layer_zero_padding_2d(padding = list(c(1, 0), c(1, 0)))
+  #55 55 256 -> 56 56 256
+  
+  op_112a <- base_model$layers[[3]]$output
+  #112 112 64
+  
+  up_1 <- op_7a %>%
+    #7 7 2048
+    layer_batch_normalization() %>%
+    layer_upsampling_2d(size = c(2, 2)) %>%
+    #14 14
+    {layer_concatenate(inputs = list(op_14a, op_14b, .), axis = 3)} %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 1024, kernel_size = c(3,3), padding = "same", activation = 'relu') %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 1024, kernel_size = c(3,3), padding = "same", activation = 'relu')
+  
+  up_2 <- up_1 %>%
+    #14 14  1024
+    layer_batch_normalization() %>%
+    layer_upsampling_2d(size = c(2, 2)) %>%
+    #28 28
+    {layer_concatenate(inputs = list(op_28a, op_28b, .), axis = 3)} %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 512, kernel_size = c(3,3), padding = "same", activation = 'relu') %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 512, kernel_size = c(3,3), padding = "same", activation = 'relu')
+  
+  up_3 <- up_2 %>%
+    #28 28 512
+    layer_batch_normalization() %>%
+    layer_conv_2d_transpose(filters = 512, kernel_size = c(4, 4), padding = "same", strides = c(2, 2), use_bias = FALSE, activation = 'relu') %>%
+    #56 56 512
+    {layer_concatenate(inputs = list(op_56a, op_56b, .), axis = 3)} %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 256, kernel_size = c(3,3), padding = "same", activation = 'relu') %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 256, kernel_size = c(3,3), padding = "same", activation = 'relu')
+  
+  up_4 <- up_3 %>%
+    #56 56 256
+    layer_batch_normalization() %>%
+    layer_conv_2d_transpose(filters = 128, kernel_size = c(4, 4), padding = "same", strides = c(2, 2), use_bias = FALSE, activation = 'relu') %>%
+    #112 112 128
+    {layer_concatenate(inputs = list(op_112a, .), axis = 3)} %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 64, kernel_size = c(3,3), padding = "same", activation = 'relu') %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 64, kernel_size = c(3,3), padding = "same", activation = 'relu')
+  
+  up_5 <- up_4 %>%
+    #112 112 64
+    layer_batch_normalization() %>%
+    layer_conv_2d_transpose(filters = 64, kernel_size = c(4, 4), padding = "same", strides = c(2, 2), use_bias = FALSE, activation = 'relu') %>%
+    #224 224 64
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 32, kernel_size = c(3,3), padding = "same", activation = 'relu') %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = 32, kernel_size = c(3,3), padding = "same", activation = 'relu') %>%
+    layer_batch_normalization() %>%
+    layer_conv_2d(filters = num_classes, kernel_size = c(1, 1), activation = 'sigmoid')
+  
+  model <- keras_model(inputs = base_model$input, outputs = up_5)
+
+  model  <- multi_gpu_model(model, gpus = 2)
+  
+  model  %>% compile(
+    optimizer = optimizer_rmsprop(lr = 0.0001),
+    loss = dice_bc_loss,
+    metrics = c(dice = dice, 'accuracy')
+  )
+  
+  return(model )
+}
+
+#建立model
+model <- set_ResNet50()
+```
+
+***
+
+由於影像大小和記憶體的限制，加上使用data augmentation，資料會膨脹很多，存放在記憶體不可行，因此，建立generator函式是必要的，batch_size大小的設定可依gpu接受的buffer大小來調整
+
+```{r, eval=FALSE}
+#generator
+train_generator <- function(jpg_names, mask_names, batch_size) {
+  
+  jpg_fullnames <- jpg_names
+  jpg_fullnames_all <- jpg_names
+  
+  mask_fullnames <- mask_names
+  mask_fullnames_all <- mask_names
+  
+  function() {
+    # start new epoch, reset
+    if (length(jpg_fullnames) < batch_size) {
+      jpg_fullnames <<- jpg_fullnames_all
+      mask_fullnames <<- mask_fullnames_all
+    }
+    batch_index <- sample(1:length(jpg_fullnames), batch_size)
+    
+    batch_jpg <- jpg_fullnames[batch_index]
+    jpg_fullnames <<- jpg_fullnames[-batch_index]
+    
+    batch_mask <- mask_fullnames[batch_index]
+    mask_fullnames <<- mask_fullnames[-batch_index]
+    
+    jpg_mask_batch <- foreach(i = 1:batch_size) %dopar% {
+      # read img, set background color
+      img_jpg <- image_background(image_read(batch_jpg[i]), 'black')
+      img_mask <- image_background(image_read(batch_mask[i]), 'black')
+      # data augmentation
+      img_jpg <- modulate_image(img_jpg)
+      img_pair <- horizontal_image(img_jpg, img_mask)
+      img_pair <- rotate_image(img_pair$jpg, img_pair$mask)
+      
+      jpg_mask_arr <- list(j = img_array(img_pair$jpg), p = mask_array(img_pair$mask))
+    }
+    
+    jpg_mask_batch <- purrr::transpose(jpg_mask_batch)
+    jpg_batch <- do.call(abind, c(jpg_mask_batch$j, list(along = 1)))
+    mask_batch <- do.call(abind, c(jpg_mask_batch$p, list(along = 1)))
+    
+    result <- list(keras_array(jpg_batch), keras_array(mask_batch))
+    
+    return(result)
+  }
+}
+
+test_generator <- function(jpg_names, mask_names, batch_size) {
+  
+  jpg_fullnames <- jpg_names
+  jpg_fullnames_all <- jpg_names
+  
+  mask_fullnames <- mask_names
+  mask_fullnames_all <- mask_names
+  
+  function() {
+    # start new epoch, reset
+    if (length(jpg_fullnames) < batch_size) {
+      jpg_fullnames <<- jpg_fullnames_all
+      mask_fullnames <<- mask_fullnames_all
+    }
+    batch_index <- sample(1:length(jpg_fullnames), batch_size)
+    
+    batch_jpg <- jpg_fullnames[batch_index]
+    jpg_fullnames <<- jpg_fullnames[-batch_index]
+    
+    batch_mask <- mask_fullnames[batch_index]
+    mask_fullnames <<- mask_fullnames[-batch_index]
+    
+    jpg_mask_batch <- foreach(i = 1:batch_size) %dopar% {
+      # read img, set background color
+      img_jpg <- image_background( image_read(batch_jpg[i]), 'black')
+      img_mask <- image_background(image_read(batch_mask[i]), 'black')
+      
+      jpg_mask_arr <- list(j = img_array(img_jpg), p = mask_array(img_mask))
+    }
+    
+    jpg_mask_batch <- purrr::transpose(jpg_mask_batch)
+    jpg_batch <- do.call(abind, c(jpg_mask_batch$j, list(along = 1)))
+    mask_batch <- do.call(abind, c(jpg_mask_batch$p, list(along = 1)))
+    
+    result <- list(keras_array(jpg_batch), keras_array(mask_batch))
+    
+    return(result)
+  }
+}
+
+```
+
+***
+
+這次使用的參數設定如下，其中py_iterator方法能建立如Python iterator來使用R的函式(generator)，如此一來就能疊代批量餵圖訓練
+
+```{r, eval=FALSE}
+batch_size <- 24
+epochs <- 100
+
+set.seed(777)
+index <- sample(length(jpg_names), 0.8 * length(jpg_names))
+#train
+train_jpg <- jpg_names[index]
+train_mask <- mask_names[index]
+#test
+test_jpg <- jpg_names[-index]
+test_mask <- mask_names[-index]
+#iterator
+train_iterator <- py_iterator(train_generator(train_jpg, train_mask, batch_size))
+test_iterator <- py_iterator(test_generator(test_jpg, test_mask, batch_size))
+```
+
+***
+
+啟用4核平行運算，將先前的方法設定至運算環境
+
+```{r, eval=FALSE}
+# doParallel
+cl <- makePSOCKcluster(4)
+registerDoParallel(cl)
+
+clusterEvalQ(cl, {
+  library(magick)
+  library(abind)
+  library(reticulate)
+  #旋轉,放大,裁切
+  rotate_image <- function(jpg, mask, left_lim = -20, right_lim = 20) {
+    
+    if (rnorm(1) < 0) return(list(jpg = jpg, mask = mask))
+    
+    degree <- runif(1, left_lim, right_lim)
+    
+    jpg <- image_rotate(jpg, degree)
+    mask <- image_rotate(mask, degree)
+    
+    original_w <-image_info(jpg)$width
+    original_h <- image_info(jpg)$height
+    
+    zoom <- round((abs(degree)+100)/100 , 2)
+    print(zoom)
+    
+    zoom_w <- round(original_w * zoom, 0)
+    zoom_h <- round(original_h * zoom, 0)
+    
+    jpg <- image_sample(jpg, paste0(zoom_w, 'x', zoom_h, '!'))
+    mask <- image_sample(mask, paste0(zoom_w, 'x', zoom_h, '!'))
+    
+    drop_w <- round((zoom_w - original_w) / 2, 0)
+    drop_h <- round((zoom_h - original_h) / 2, 0)
+    
+    jpg <- image_crop(jpg, paste0(original_w, 'x', original_h, '+', drop_w, '+', drop_h))
+    mask <- image_crop(mask, paste0(original_w, 'x', original_h, '+', drop_w, '+', drop_h))
+    
+    return(list(jpg = jpg, mask = mask))
+  }
+  #水平翻轉
+  horizontal_image <- function(jpg, mask){
+    
+    if (rnorm(1) < 0) return(list(jpg = jpg, mask = mask))
+    
+    jpg <- image_flop(jpg)
+    mask <- image_flop(mask)
+    return(list(jpg = jpg, mask = mask))
+  }
+  #亮度,飽和,色相
+  modulate_image <- function(img,
+                             brightness_lim = c(100, 140),
+                             saturation_lim = c(90, 130),
+                             hue_lim = c(80, 120)) {
+    
+    if (rnorm(1) < 0) return(img)
+    
+    b_shift <- runif(1, brightness_lim[1], brightness_lim[2])
+    s_shift <- runif(1, saturation_lim[1], saturation_lim[2])
+    h_shift <- runif(1, hue_lim[1], hue_lim[2])
+    
+    img <- image_modulate(img, brightness = b_shift, saturation =  s_shift, hue = h_shift)
+    
+    return(img)
+  }
+  #image轉成array
+  img_array <- function(img, h = 224 , w = 224) {
+    img <- image_sample(img, paste0(w, 'x', h, '!'))
+    arr <- array(data = as.numeric(img[[1]]), dim = c(1, h, w, 3))
+    return(arr)
+  }
+  mask_array <- function(img, h =224, w =224) {
+    img <- image_sample(img, paste0(w, 'x', h, '!'))
+    arr <- array(data = as.numeric(img[[1]]), dim = c(1, h, w, 1))
+    return(arr)
+  }
+  
+})
+```
+
+***
+
+設定使用tensorboard，callbacks_list中自訂提前終止條件、高原期減少學習率及檢查點設定
+
+```{r, eval=FALSE}
+#tensorboard設定
+tensorboard("data/ImageMasking/logs_r")
+#callback設定
+callbacks_list <- list(
+  callback_tensorboard(log_dir = "data/ImageMasking/logs_r", batch_size = batch_size),
+  callback_early_stopping(monitor = "val_dice",
+                          min_delta = 0.0001,
+                          patience = 6,
+                          verbose = 1,
+                          mode = "max"),
+  callback_reduce_lr_on_plateau(monitor = "val_dice",
+                                factor = 0.1,
+                                patience = 3,
+                                verbose = 1,
+                                epsilon = 0.0001,
+                                mode = "max"),
+  callback_model_checkpoint(filepath = "data/ImageMasking/FCN_{epoch:03d}.h5",
+                            monitor = "val_dice",
+                            save_best_only = TRUE,
+                            save_weights_only = TRUE,
+                            mode = "max" )
+)
+#開始訓練
+model %>% fit_generator(
+  generator = train_iterator,
+  steps_per_epoch = as.integer(length(train_jpg) / batch_size),
+  epochs = epochs,
+  validation_data = test_iterator,
+  validation_steps = as.integer(length(test_jpg) / batch_size),
+  callbacks = callbacks_list
+)
+#close平行運算
+stopCluster(cl)
+gc()
+```
+
+***
+
+訓練結果如下，在epoch 50終止
+
+![](data/ImageMasking/0320/epoch_50_score.png)
+
+![](data/ImageMasking/0320/epoch_50.png)
+
+***
+
+使用測試資料預測，中間是原本的mask，右邊是預測結果，原則上看起來很不錯，輪框、天線等細節部份也有呈現出來，不過這畢竟是應用在壓縮圖(224x224)之下的情形
+
+![](data/ImageMasking/0320/pred_1_1.png)
+
+![](data/ImageMasking/0320/pred_1_2.png)
+
+![](data/ImageMasking/0320/pred_1_3.png)
+
+***
+
+下圖是原圖+mask合成圖
+
+![](data/ImageMasking/0320/1280_01.png)
+
+下圖是預測(224x224)再放大到原圖大小(1280x1918)，由於放大關係，邊緣線條為鋸齒狀，不過整體覆蓋率還可以
+
+![](data/ImageMasking/0320/1280_02.png)
+
+***
+
+由於carvana資料圖的背景固定，如果model預測到現實圖片結果是如何呢?基於這樣的好奇心，隨選幾張網路圖做了以下預測，預測1(中間圖)是使用之前epoch 50的權重來預測，可以看出來預測結果不是很理想，不過由於base model使用imagenet權重來訓練的關係，背景物體(山、人...)其實是有被認出來的，只是無法得知是否歸屬車或背景，這是受限carvana訓練資料背景單純的影響。因此，後來加入pascal voc中255筆車子資料，base epoch 50權重再訓練一次，得到預測2(右邊圖)的結果，和中間圖相比，顯然很多背景物體已經可以識別出來，不過也許是資料筆數太少、車子樣式不足，車型識別還有很多改善空間
+
+![](data/ImageMasking/0320/real_2_1.png)
+
+![](data/ImageMasking/0320/real_2_2.png)
+
+![](data/ImageMasking/0320/real_2_3.png)
+
+![](data/ImageMasking/0320/real_2_4.png)
+
+![](data/ImageMasking/0320/real_2_5.png)
+
+![](data/ImageMasking/0320/real_2_6.png)
+
+***
+
+回到carvana競賽主題，提交預測結果的測試資料筆數為100064筆，為節省上傳檔案大小，kaggle要求特定的格式，我的作法是預測、放大、轉換格式，不過要花一些時間處理，以下是格式轉換的函式
+
+```{r, eval=FALSE}
+#file format
+file_format <- function(img_mask) {
+  mtx <- as.numeric(img_mask[[1]])[,,1]
+  mtx <- t(mtx)
+  bi <- ifelse(as.numeric(mtx) >= 0.5, 1, 0)
+  diff_bi <- c(bi, 0) - c(0, bi)
+  starts <- which(diff_bi == 1)
+  ends <- which(diff_bi == -1)
+  fm <- paste(c(rbind(starts, ends - starts)), collapse = " ")
+  return(fm)
+}
+```
+
+最後，試著以原圖的四分之一(640x960)，搭配自建的UNet重新訓練、預測，提交所得的分數為0.995746
+
+![](data/ImageMasking/0320/submission.png)
+
+
+
+
+
