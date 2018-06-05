@@ -1,6 +1,6 @@
 ---
 title: ""
-date: "2018-06-04"
+date: "2018-06-05"
 output: 
   html_document:
     highlight: "pygments"
@@ -30,7 +30,7 @@ library(imager)
     
 ***
 
-物體偵測(object detection)的手法大致可分為兩種，one-stage 和 two stage，前者如SSD 和 YOLO，後者如Faster R-CNN 和R-FCN ，前者檢測精確度高、後者檢測速度快，各有優缺。<a href='https://pjreddie.com/darknet/yolo/' target="_blank">YOLO</a>目前最新版本為v3，本篇實作pre-trained YOLOv2 model，檢測labels分為20類和80類(使用VOC和COCO資料)，<a href='https://www.datasciencecentral.com/profiles/blogs/autonomous-driving-car-detection-with-yolo-model-with-keras-in' target="_blank">相關YOLO原理</a>網路上很多介紹，本篇以實作為主
+物體偵測(object detection)的手法大致可分為兩種，one-stage 和 two stage，前者如SSD 和 YOLO，後者如Faster R-CNN 和R-FCN ，前者檢測精確度高、後者檢測速度快，各有優缺。<a href='https://pjreddie.com/darknet/yolo/' target="_blank">YOLO</a>目前最新版本為v3，本篇實作pre-trained YOLOv2 model，檢測labels分為20類和80類(使用VOC和COCO資料)，<a href='https://www.datasciencecentral.com/profiles/blogs/autonomous-driving-car-detection-with-yolo-model-with-keras-in' target="_blank">相關YOLO原理</a>網路上很多介紹，建議先花點時間理解，本篇以實作為主
 
 ***
 
@@ -302,7 +302,7 @@ range(img)
 
 ![](image/k5.jpg)
 
-
+***
 
 ```{r, echo=TRUE}
 #預測
