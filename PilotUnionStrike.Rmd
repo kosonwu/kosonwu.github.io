@@ -28,14 +28,14 @@ load(file.path("data", 'Airport', '.RData'))
     
 ***
 
-好久沒上傳更新了，這段期間其實都有在充實AI的知識，也進行了一些實作，deep learning 真的是 deep stack，做中學可以體會特別深刻，之後再來補上心得。過年期間，發生了華航機師聯合罷工，剛好看到google map的應用，心血來潮、剛好趁這個機會練習一下，也給自己一些更新網站的動力。這次視覺化的實作很簡單，主要分為四個步驟：
+好久沒上傳更新了，這段期間其實都有在充實AI的知識，也進行了一些實作，deep learning 真的是 deep stack，做中學可以體會特別深刻，之後再來補上心得。過年期間，發生了華航機師聯合罷工，期間約2.5萬名旅客受到影響，剛好看到google map的應用，心血來潮、剛好趁這個機會練習一下，也給自己一些更新網站的動力。這次視覺化的實作很簡單，主要分為四個步驟：
 
   + 1：Get API Key (<a href='https://developers.google.com/maps/documentation/javascript/get-api-key' target="_blank">https://developers.google.com/maps/documentation/javascript/get-api-key</a>)，google 提供300美金/年 免費試用
   + 2：Get Pilot Union strike latest news (<a href='https://www.china-airlines.com/au/en/discover/news/press-release/announcement' target="_blank">華航官網罷工資訊</a>)
   + 3：Get Latitude / Longitude via IATA code (<a href='https://www.world-airport-codes.com' target="_blank">https://www.world-airport-codes.com</a>)
   + 4：Install googleway 套件，編碼繪圖
 
-首先，利用rvest套件read_html方法來擷取華航罷工的新聞資訊，其中CI開頭是影響的行班，後面的三個字母是機場代碼(IATA code)
+首先，利用rvest套件read_html方法來擷取華航罷工的新聞資訊，其中CI開頭是影響的航班，後面的三個字母是機場代碼(IATA code)，共取得140筆航班資訊
 
 ***
 
@@ -160,7 +160,7 @@ google_map(key = map_key, style = style) %>%
 ```
 
 
-華航罷工影響行班的飛行路線分佈
+華航罷工影響航班的飛行路線分佈
 
 ![](data/Airport/flight_1.png)
 

@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [Plotting cancelled/delay flight paths at pilot union strike](./PilotUnionStrike.html) ---  繪製華航罷工事件影響行班的飛行路徑.
+* [Plotting cancelled/delay flight paths at pilot union strike](./PilotUnionStrike.html) ---  繪製華航罷工事件影響航班的飛行路徑.
 ( *2019-02-19* )
 
 
