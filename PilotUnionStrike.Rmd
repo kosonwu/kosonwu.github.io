@@ -1,0 +1,190 @@
+---
+title: ""
+date: "2019-02-19"
+output: 
+  html_document:
+    highlight: "pygments"
+    theme: "sandstone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rvest)
+library(stringr)
+library(plyr)
+library(googleway)
+
+load(file.path("data", 'Airport', '.RData'))
+```
+
+* ### Plotting cancelled/delay flight paths at pilot union strike
+
+***
+
+    library(rvest)
+    library(stringr)
+    library(plyr)
+    library(googleway)
+    
+***
+
+好久沒上傳更新了，這段期間其實都有在充實AI的知識，也進行了一些實作，deep learning 真的是 deep stack，做中學可以體會特別深刻，之後再來補上心得。過年期間，發生了華航機師聯合罷工，剛好看到google map的應用，心血來潮、剛好趁這個機會練習一下，也給自己一些更新網站的動力。這次視覺化的實作很簡單，主要分為四個步驟：
+
+  + 1：Get API Key (<a href='https://developers.google.com/maps/documentation/javascript/get-api-key' target="_blank">https://developers.google.com/maps/documentation/javascript/get-api-key</a>)，google 提供300美金/年 免費試用
+  + 2：Get Pilot Union strike latest news (<a href='https://www.china-airlines.com/au/en/discover/news/press-release/announcement' target="_blank">華航官網罷工資訊</a>)
+  + 3：Get Latitude / Longitude via IATA code (<a href='https://www.world-airport-codes.com' target="_blank">https://www.world-airport-codes.com</a>)
+  + 4：Install googleway 套件，編碼繪圖
+
+首先，利用rvest套件read_html方法來擷取華航罷工的新聞資訊，其中CI開頭是影響的行班，後面的三個字母是機場代碼(IATA code)
+
+***
+
+```{r, eval=FALSE}
+
+#Pilot Union strike
+news <- read_html('https://www.china-airlines.com/au/en/discover/news/press-release/announcement')
+
+news_text <- news %>%
+  html_nodes("td") %>%
+  html_nodes("p") %>%
+  html_text(trim = T)
+
+#CI begin only
+news_text <- str_subset(news_text, "CI")
+
+news_text <- sapply(news_text, function(x){
+  end <- str_locate(x, "-")[1] + 4
+  str_sub(x, start = 1L, end = end)
+})
+attr(news_text, 'names') <- NULL
+
+news_text <- gsub(" -", "", news_text)
+
+#add ID, convert to dataframe
+news_df <- do.call(rbind, strsplit(news_text, ' '))
+news_df <- cbind(ID = seq_len(nrow(news_df)), as.data.frame(news_df, stringsAsFactors  =FALSE))
+colnames(news_df) <- c('ID', 'Flight','Airport_S','Airport_E')
+```
+
+news_df 前3筆資料
+
+```{r, echo=FALSE}
+head(news_df, 3)
+```
+***
+
+接下來，透過 <a href='https://www.world-airport-codes.com' target="_blank">www.world-airport-codes.com</a> 網站，使用IATA code查詢機場的經緯度
+
+```{r, eval=FALSE}
+
+#iata code to lat lon
+IATA2LatLon <- function(iata_codes) {
+  
+  latlon <- lapply(iata_codes, function(x){
+    
+    cat('iata_code =', x , '\n')
+    IATA <- read_html(paste0('https://www.world-airport-codes.com/search/?s=', x))
+    #node
+    IATA_node <- IATA %>%
+      html_nodes("span.airportAttributeValue")
+    #data-key
+    IATA_data_key <- html_attr(IATA_node, 'data-key')
+    #緯度,經度位置
+    idx_lat <- which(IATA_data_key=='Latitude')
+    idx_lon <- which(IATA_data_key=='Longitude')
+    #緯度,經度
+    lat <- html_attr(IATA_node, 'data-value')[idx_lat]
+    lon <- html_attr(IATA_node, 'data-value')[idx_lon]
+    
+    return(c(iata = x, lat = lat, lon = lon))
+  })
+  
+  return(latlon)
+}
+#get lat lon by iata
+unique_iata <- unique(c(news_df$Airport_S, news_df$Airport_E))
+latlon_iata <- IATA2LatLon(unique_iata)
+latlon_iata <- data.frame(do.call(rbind, latlon_iata), stringsAsFactors = FALSE)
+latlon_iata$lat <- as.numeric(latlon_iata$lat)
+latlon_iata$lon <- as.numeric(latlon_iata$lon)
+```
+
+latlon_iata 前3筆資料
+
+```{r, echo=FALSE}
+head(latlon_iata, 3)
+```
+
+將news_df, latlon_iata合併
+
+```{r, eval=FALSE}
+
+#join
+flights_iata <- merge(news_df, latlon_iata, by.x = 'Airport_S', by.y = 'iata')
+colnames(flights_iata)[5:6] <- c('Lat_S', 'Lon_S')
+
+flights_iata <- merge(flights_iata, latlon_iata, by.x = 'Airport_E', by.y = 'iata')
+colnames(flights_iata)[7:8] <- c('Lat_E', 'Lon_E')
+```
+
+利用googleway套件中encode_pl方法，將經緯度編碼成polyline
+
+```{r, eval=FALSE}
+#encode the routes as polylines
+polylines_lst <- lapply(unique(flights_iata$ID), function(x){
+  lat = c(flights_iata[flights_iata["ID"] == x, c("Lat_S")], flights_iata[flights_iata["ID"] == x, c("Lat_E")])
+  lon = c(flights_iata[flights_iata["ID"] == x, c("Lon_S")], flights_iata[flights_iata["ID"] == x, c("Lon_E")])
+  data.frame(id = x, polyline = encode_pl(lat = lat, lon = lon), stringsAsFactors = FALSE)
+})
+#join
+flights_iata <- merge(flights_iata, do.call(rbind, polylines_lst), by.x = 'ID', by.y = "id")
+```
+
+flights_iata 前3筆資料，到這裡資料已經準備完成
+
+```{r, echo=FALSE}
+head(flights_iata, 3)
+```
+
+地圖風格設定，有Standard, Silver, Retro, Dark, Night, Aubergine等主題可選。最後輸入API key，繪製google map
+
+```{r, eval=FALSE}
+#map style
+style <- map_styles()$aubergine
+#API key
+map_key <- "your_api_key"
+#plot
+google_map(key = map_key, style = style) %>%
+  add_polylines(data = flights_iata, polyline = "polyline", mouse_over_group = "Airport_S",
+                stroke_weight = 1.5, stroke_opacity = 0.5, stroke_colour = "#FF99FF")
+```
+
+
+華航罷工影響行班的飛行路線分佈
+
+![](data/Airport/flight_1.png)
+
+***
+
+往返TPE影響最多，日本路線影響頻繁
+
+![](data/Airport/flight_2.png)
+
+***
+
+小港往返大阪、上海、香港及馬尼拉受到影響
+
+![](data/Airport/flight_3.png)
+
+***
+
+台南往返大阪受影響
+
+![](data/Airport/flight_4.png)
+
+
+***
+
+* ### Lessons Learned:
+    + #### Google maps
+    + #### Googleway

@@ -14,13 +14,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [Implement a pre-trained YOLOv2 model - object detection](./yolov2.html) ---  實現物體偵測，利用 pre-trained YOLOv2 model.
-( *2018-06-05* )
+* [Plotting cancelled/delay flight paths at pilot union strike](./PilotUnionStrike.html) ---  繪製華航罷工事件影響行班的飛行路徑.
+( *2019-02-19* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [Implement a pre-trained YOLOv2 model - object detection](./yolov2.html) ---  實現物體偵測，利用 pre-trained YOLOv2 model.
+( *2018-06-05* )
 
 * [Carvana Image Masking - Semantic Segmentation using Keras](./carvana.html) ---  使用 Keras 影像分割，自動去除 Carvana 影像背景.
 ( *2018-04-23* )
