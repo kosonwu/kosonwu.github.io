@@ -140,7 +140,7 @@ polylines_lst <- lapply(unique(flights_iata$ID), function(x){
 flights_iata <- merge(flights_iata, do.call(rbind, polylines_lst), by.x = 'ID', by.y = "id")
 ```
 
-flights_iata 前3筆資料，到這裡資料已經準備完成
+flights_iata 前3筆資料，到這裡資料已經準備完成 
 
 ```{r, echo=FALSE}
 head(flights_iata, 3)
