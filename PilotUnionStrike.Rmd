@@ -3,8 +3,8 @@ title: ""
 date: "2019-02-19"
 output: 
   html_document:
-    highlight: "pygments"
-    theme: "sandstone"
+    highlight: 'pygments'
+    theme: "darkly"
 ---
 
 ```{r setup, include=FALSE}

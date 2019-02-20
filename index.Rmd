@@ -3,7 +3,7 @@ title: "practice in R"
 output: 
   html_document:
     highlight: "pygments"
-    theme: "sandstone"
+    theme: "darkly"
 ---
 
 ```{r setup, include=FALSE}
