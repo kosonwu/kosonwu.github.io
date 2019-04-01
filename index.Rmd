@@ -14,13 +14,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 > __RECENT__
 
-* [Plotting cancelled/delay flight paths at pilot union strike](./PilotUnionStrike.html) ---  繪製華航罷工事件影響航班的飛行路徑.
-( *2019-02-19* )
+* [Visualizing what convnets of VGG16 learn](./vgg16Visualizing.html) ---  可視化 VGG16 卷積網路學習的內容.
+( *2019-04-01* )
 
 
 ***
 
 > __PREVIOUS__
+
+* [Plotting cancelled/delay flight paths at pilot union strike](./PilotUnionStrike.html) ---  繪製華航罷工事件影響航班的飛行路徑.
+( *2019-02-19* )
 
 * [Implement a pre-trained YOLOv2 model - object detection](./yolov2.html) ---  實現物體偵測，利用 pre-trained YOLOv2 model.
 ( *2018-06-05* )

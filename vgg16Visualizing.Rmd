@@ -1,0 +1,540 @@
+---
+title: ""
+date: "2019-04-01"
+output: 
+  html_document:
+    highlight: 'pygments'
+    theme: "darkly"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(keras)
+library(magick)
+library(viridis)
+IMG_PATH        = 'image'
+#preprocessing an input image
+preprocess_image <- function(path, img_height = IMAGE_H, img_width = IMAGE_W) {
+  img <- image_load(path, target_size = c(img_height, img_width), interpolation = 'lanczos') %>%
+    image_to_array() %>%
+    array_reshape(c(1, dim(.)))
+  #default model=caffe, convert the images from RGB to BGR
+  imagenet_preprocess_input(img)
+}
+```
+
+* ### Visualizing what convnets of VGG16 learn
+
+***
+
+    library(keras)
+    library(magick)
+    library(viridis)
+    
+***
+
+深度學習常被認為是黑箱(black boxes)演算法，主要是其結果不易解釋、呈現型態人們較難理解。其實，在卷積層網路也不完全是這樣，能透過視覺化來解釋它的學習表現，本次主要分以下三部份來進行：
+
+  + 1：視覺化激活(activation)的輸出，也就是給定一個輸入，經過卷積後的輸出 - 由特徵地圖(feature  maps)組成
+  + 2：視覺化過濾器(filter)，也就是呈現卷積網路所學習的視覺圖樣(pattern)
+  + 3：視覺化類別激活的熱力圖(heatmap)，也就是輸入一個影像，經由卷積來了解其最後的分類決定依據是什麼
+
+以下是VGG16網路架構，本次將針對其卷積的部份(藍色部份)，進行視覺化
+
+![](image/vgg16.png)
+
+***
+
+* #### __視覺化激活(activation)函式的輸出 __
+
+首先載入vgg16 model，因為目的任務並非分類，include_top設為FALSE，權重設定imagenet以便擷取特徵。只留下卷積層、取其各層的output
+
+```{r, eval=FALSE}
+
+#VGG16
+model <- application_vgg16(weights = 'imagenet', include_top = F)
+
+#keep conv layers only
+layers_name <- sapply(model$layers, `[[`, "name")
+layers_name <- layers_name[grep("conv", layers_name)]
+
+#conv layer outputs
+layers_output <- lapply(layers_name, function(name) model$get_layer(name)$output)
+#設定model
+activation_model <- keras_model(inputs = model$input, outputs = layers_output)
+
+```
+
+讀取一張獵豹照片，自訂寬度設為400。由於model載入imagenet權重，因此使用imagenet_preprocess_input方法進行前置處理，可以看到img最小、最大值分別為-117.680、151.061，並非落在0至255。主要原因是imagenet_preprocess_input方法在執行時，已事先減掉imagenet資料集RGB通道的平均值
+
+```{r, eval=FALSE}
+IMG_PATH        = 'image'
+#獵豹照片
+img_path <- file.path(IMG_PATH, 'cheetah_2.jpg')
+img <- image_load(img_path)
+width <- img$size[[1]]
+height <- img$size[[2]]
+#set target W/H
+IMAGE_W <- 400L
+IMAGE_H <- as.integer(IMAGE_W * height / width)
+
+#preprocessing an input image
+preprocess_image <- function(path, img_height = IMAGE_H, img_width = IMAGE_W) {
+  img <- image_load(path, target_size = c(img_height, img_width), interpolation = 'lanczos') %>%
+    image_to_array() %>%
+    array_reshape(c(1, dim(.)))
+  #default model=caffe, convert the images from RGB to BGR
+  imagenet_preprocess_input(img)
+}
+
+img <- preprocess_image(img_path)
+dim(img)
+range(img)
+
+```
+
+因此，如果要繪出前處理的影像，我們需要另一個後處理函式，加回imagenet資料集RGB通道的平均值，再將其標準化，讓畫素值落在0至1之間。測試一下剛剛處理的獵豹照片
+
+```{r, eval=FALSE}
+
+#for visualizing img
+#depreprocessing an input image
+deprocess_image <- function(x) {
+  x <- x[1,,,]
+  x[,,1] <- x[,,1] + 103.939
+  x[,,2] <- x[,,2] + 116.779
+  x[,,3] <- x[,,3] + 123.68
+  x <- x[,,c(3,2,1)]
+  x[x > 255] <- 255
+  x[x < 0] <- 0
+  x[] <- as.integer(x)/255
+  x
+}
+
+dep_img <- deprocess_image(img)
+dim(dep_img)
+range(dep_img)
+
+plot(as.raster(dep_img))
+
+```
+
+![](image/cheetah_2.jpg)
+
+預測img可以得到各層卷積的輸出，共13層
+
+```{r, eval=FALSE}
+#get each layer output
+activations <- activation_model %>% predict(img)
+length(activations)
+```
+
+由於各層輸出的寬高、通道數不同，為節省執行時間，只取各層前40個通道，為清楚顯示輸出的特徵地圖，固定寬為100
+
+```{r, eval=FALSE}
+#畫出通道圖
+plot_channel <- function(channel) {
+  c(h, w) %<-% dim(channel)
+  rotate <- function(x) t(apply(x, 2, rev))
+  image(rotate(channel), axes = FALSE, asp = (h / w), col = topo.colors(12))
+}
+
+#繪出圖存放的目錄
+dir_path <- file.path(IMG_PATH, 'vgg_filters')
+if(!dir.exists(dir_path))
+  dir.create(dir_path)
+
+#固定image size, get 40 maps only
+image_size <- 100
+images_per_row <- 8
+
+for (i in 1:length(activations)) {
+
+  (t1 = Sys.time())
+
+  #第i層
+  layer_activation <- activations[[i]]
+
+  layer_name <- layers_name[i]
+  n_features <- dim(layer_activation)[4]
+  cat(i, ":layer_activation(", layer_name, ") spend time: ")
+
+  n_cols <- 5
+
+  file_name <- paste0(i, "_", layer_name, "_output_", n_features, ".png")
+  png(file.path(dir_path, file_name), width = image_size * images_per_row, height = image_size * n_cols)
+
+  op <- par(mfrow = c(n_cols, images_per_row), mai = rep_len(0.02, 4))
+
+  for (k in 1:(n_cols * images_per_row)) {
+    channel_image <- layer_activation[1, , , k]
+    plot_channel(channel_image)
+  }
+
+  par(op)
+  dev.off()
+
+  cat(difftime(Sys.time(), t1, units = 'secs'), "secs \n")
+}
+```
+
+以下是第1層卷積輸出
+
+![](image/vgg_filters/1_block1_conv1_output_64.png)
+
+***
+
+第2層卷積輸出
+
+![](image/vgg_filters/2_block1_conv2_output_64.png)
+
+***
+
+第3層卷積輸出
+
+![](image/vgg_filters/3_block2_conv1_output_128.png)
+
+***
+
+第4層卷積輸出
+
+![](image/vgg_filters/4_block2_conv2_output_128.png)
+
+***
+
+第5層卷積輸出
+
+![](image/vgg_filters/5_block3_conv1_output_256.png)
+
+***
+
+第6層卷積輸出
+
+![](image/vgg_filters/6_block3_conv2_output_256.png)
+
+***
+
+第7層卷積輸出
+
+![](image/vgg_filters/7_block3_conv3_output_256.png)
+
+***
+
+第8層卷積輸出
+
+![](image/vgg_filters/8_block4_conv1_output_512.png)
+
+***
+
+第9層卷積輸出
+
+![](image/vgg_filters/9_block4_conv2_output_512.png)
+
+***
+
+第10層卷積輸出
+
+![](image/vgg_filters/10_block4_conv3_output_512.png)
+
+***
+
+第11層卷積輸出
+
+![](image/vgg_filters/11_block5_conv1_output_512.png)
+
+***
+
+第12層卷積輸出
+
+![](image/vgg_filters/12_block5_conv2_output_512.png)
+
+***
+
+最後第13層卷積輸出
+
+![](image/vgg_filters/13_block5_conv3_output_512.png)
+
+從以上可以看出視覺化激活(activation)的輸出，隨著卷積層數增加，其特徵地圖由具體漸漸轉變成抽象
+
+***
+
+* #### __視覺化過濾器(filter) __
+
+載入vgg16 model，input_shape 寬訂為400、高310
+
+```{r, eval=FALSE}
+#VGG16
+model <- application_vgg16(weights = 'imagenet', include_top = F, input_shape = c(IMAGE_H, IMAGE_W, 3))
+
+```
+
+標準化函式，處理張量數值介於0到1
+
+```{r, eval=FALSE}
+#處理張量數值介於0到1
+normalize_image <- function(x) {
+  dms <- dim(x)
+  #標準化,Z score
+  x <- (x - mean(x)) / (sd(x) + 1e-5)
+  #centers on 0., ensures that std is 0.1
+  x <- x * 0.1
+  x <- x + 0.5
+  #修剪為0到1
+  x <- pmax(0, pmin(x, 1))
+  array(x, dim = dms)
+}
+```
+
+生成過濾器學習的圖樣，傳入卷積層名與過濾器編號索引，反覆執行50次，產出其圖樣張量
+
+```{r, eval=FALSE}
+#generate filter visualizations
+generate_pattern <- function(layer_name, filter_index) {
+  #convnet 活化(activation)後的output
+  layer_output <- model$get_layer(layer_name)$output
+
+  h <- k_int_shape(layer_output)[[2]]
+  w <- k_int_shape(layer_output)[[3]]
+
+  #指定filter的平均output
+  loss <- k_mean(layer_output[, , , filter_index])
+  #得到梯度loss
+  grads <- k_gradients(loss, model$input)[[1]]
+  #標準化,除以L2範數(RMSE),確保輸入圖像的update都在相同範圍內
+  grads <- grads / (k_sqrt(k_mean(k_square(grads))) + 1e-5)
+  #定義一個Keras function ,輸入 a list, 輸出 a list(2 tensors)
+  iterate <- k_function(list(model$input), list(loss, grads))
+  #初始一個灰階img
+  input_img_data <- array(runif(h * w * 3), dim = c(1, h, w, 3)) * 20 + 128
+
+  step <- 1
+  for (i in 1:50) {
+    c(loss_value, grads_value) %<-% iterate(list(input_img_data))
+    input_img_data <- input_img_data + (grads_value * step)
+  }
+
+  img <- input_img_data[1,,,]
+  #處理張量數值介於0到1
+  normalize_image(img)
+}
+```
+
+相同為節省時間及清楚顯示，每層只取40個過濾器圖樣，寬固定為100
+
+```{r, eval=FALSE}
+#固定image size, get 40 filters only
+image_size <- 100
+images_per_row <- 8
+
+for (i in 1:length(layers_name)) {
+
+  (t1 = Sys.time())
+
+  layer_name <- layers_name[i]
+  layer_output <- model$get_layer(layer_name)$output
+  cat(i, ":layer(", layer_name, ") spend time: ")
+
+  n_features <- k_int_shape(layer_output)[[4]]
+  n_cols <- 5
+
+  file_name <- paste0(i, "_", layer_name, "_filter_", n_features, ".png")
+
+  png(file.path(dir_path, file_name), width = images_per_row * image_size, height = n_cols * image_size)
+
+  op <- par(mfrow = c(n_cols, images_per_row), mai = rep_len(0.02, 4))
+
+  for (k in 1:(n_cols * images_per_row)) {
+      pattern <- generate_pattern(layer_name, k)
+      plot(as.raster(pattern))
+  }
+  par(op)
+  dev.off()
+
+  cat(difftime(Sys.time(), t1, units = 'secs'), "secs \n")
+}
+```
+
+
+第1層過濾器學習的圖樣
+
+![](image/vgg_filters/1_block1_conv1_filter_64.png)
+
+***
+
+第2層過濾器學習的圖樣
+
+![](image/vgg_filters/2_block1_conv2_filter_64.png)
+
+***
+
+第3層過濾器學習的圖樣
+
+![](image/vgg_filters/3_block2_conv1_filter_128.png)
+
+***
+
+第4層過濾器學習的圖樣
+
+![](image/vgg_filters/4_block2_conv2_filter_128.png)
+
+***
+
+第5層過濾器學習的圖樣
+
+![](image/vgg_filters/5_block3_conv1_filter_256.png)
+
+***
+
+第6層過濾器學習的圖樣
+
+![](image/vgg_filters/6_block3_conv2_filter_256.png)
+
+***
+
+第7層過濾器學習的圖樣
+
+![](image/vgg_filters/7_block3_conv3_filter_256.png)
+
+***
+
+第8層過濾器學習的圖樣
+
+![](image/vgg_filters/8_block4_conv1_filter_512.png)
+
+***
+
+第9層過濾器學習的圖樣
+
+![](image/vgg_filters/9_block4_conv2_filter_512.png)
+
+***
+
+第10層過濾器學習的圖樣
+
+![](image/vgg_filters/10_block4_conv3_filter_512.png)
+
+***
+
+第11層過濾器學習的圖樣
+
+![](image/vgg_filters/11_block5_conv1_filter_512.png)
+
+***
+
+第12層過濾器學習的圖樣
+
+![](image/vgg_filters/12_block5_conv2_filter_512.png)
+
+***
+
+最後第13層過濾器學習的圖樣
+
+![](image/vgg_filters/13_block5_conv3_filter_512.png)
+
+從以上可以看出過濾器學習的圖樣，隨著層數增加，由一開始簡單的邊緣、線條，逐漸轉變為紋理、局部圖樣...，也就是由簡易逐漸至複雜、由細部逐漸至局部的樣式
+
+
+***
+
+* #### __視覺化類別激活的熱力圖(heatmap) __
+
+這個熱力圖可以顯示判斷圖片所屬類別的主要依據特徵與相關位置，所以接下來將使用pretrained的VGG16 model，它可以預測1000種類別，其中有包括獵豹(cheetah)這個類別。一樣使用之前的那張獵豹照片，為了使用model預測，將寬、高設為224
+
+```{r, echo=TRUE}
+
+#pretrained VGG16 including top
+model <- application_vgg16(weights = 'imagenet')
+#獵豹照片
+img_path <- file.path(IMG_PATH, 'cheetah_2.jpg')
+#preprocessing an input image
+img <- preprocess_image(img_path, img_height = 224, img_width = 224)
+
+```
+
+照片預測出來的結果，機率最高是在第294位置。看一下預測結果前三名，第一名是cheetah沒錯，分數為9.996395e-01
+
+```{r, echo=TRUE}
+
+#預測
+preds <- model %>% predict(img)
+which.max(preds[1,])
+
+#預測結果前三類
+imagenet_decode_predictions(preds, top = 3)[[1]]
+
+```
+
+接下來，利用剛剛294位置的model output，以及最後一層卷積(block5_conv3)的output，計算之間的梯度loss(如下圖)，然後將各通道取平均值，最後再乘於剛剛最後一層卷積的output，這方法稱之為Grad-CAM(Gradient Class Activation Map)。
+
+```{r, eval=FALSE}
+
+#Grad-CAM algorithm
+#model output 
+cheetah_output <- model$output[, 294]
+#最後一層卷積output
+last_conv_output <- model$get_layer('block5_conv3')$output
+#梯度loss
+grads <- k_gradients(cheetah_output, last_conv_output)[[1]]
+#各通道的平均梯度
+pooled_grads <- k_mean(grads, axis = c(1L, 2L, 3L))
+#定義一個Keras function ,輸入 a list, 輸出 a list(2 tensors)
+iterate <- k_function(list(model$input), list(pooled_grads, last_conv_output[1,,,]))
+
+c(pooled_grads_value, conv_layer_output_value) %<-% iterate(list(img))
+dim(pooled_grads_value)
+dim(conv_layer_output_value)
+
+for (i in 1:512) {
+  conv_layer_output_value[,,i] <- pooled_grads_value[i] * conv_layer_output_value[,,i]
+}
+
+```
+
+![](image/Grad-CAM.jpg)
+
+逐通道平均，再將它標準化讓值介於0至1之間，就可以得到維度14x14的熱力圖
+
+```{r, eval=FALSE}
+
+#channel-wise mean
+heatmap <- apply(conv_layer_output_value, c(1,2), mean)
+dim(heatmap)
+#14 14
+
+#Normalize, between 0 and 1
+normalization <- function(x){
+  return((x - min(x)) / (max(x) - min(x)))
+}
+heatmap <- normalization(heatmap)
+```
+
+最後，將熱力圖resize再與原本獵豹照片重疊，從結果中可以知道VGG16 model認定獵豹的主要特徵是什麼，不是耳朵形狀、也不是毛色花紋，而是集中在眼部與鼻子之間的特徵，與常認定的淚痕特徵似乎很吻合
+
+```{r, eval=FALSE}
+
+image <- image_read(img_path)
+info <- image_info(image)
+geometry <- sprintf("%dx%d!", info$width, info$height)
+
+pal <- col2rgb(viridis(20), alpha = TRUE)
+alpha <- floor(seq(0, 255, length = ncol(pal)))
+pal_col <- rgb(t(pal), alpha = alpha, maxColorValue = 255)
+#heatmap overlay
+write_heatmap(heatmap, file.path(IMG_PATH, 'cheetah_overlay.jpg'), width = 224, height = 224, bg = NA, col = pal_col)
+#composite to plot
+image_read(file.path(IMG_PATH, 'cheetah_overlay.jpg')) %>%
+  image_resize(geometry, filter = "quadratic") %>%
+  image_composite(image, operator = "blend", compose_args = "30") %>%
+  plot()
+
+```
+
+![](image/cheetah_combo.jpg)
+
+***
+
+* ### Lessons Learned:
+    + #### Visualizing intermediate activations
+    + #### Visualizing convnet filters
+    + #### Visualizing heatmaps of class activation
+    
