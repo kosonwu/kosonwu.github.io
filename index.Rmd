@@ -11,105 +11,133 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ***
-
-> __RECENT__
-
-* [Visualizing what convnets of VGG16 learn](./vgg16Visualizing.html) ---  可視化 VGG16 卷積網路學習的內容.
-( *2019-04-01* )
-
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/dfc_cvae_predict.png" width="350" align="right" /> | <a href="./DFC_CVAE.html"> Deep feature consistent conditional variational autoencoder (DFC CVAE) in Keras. <br/><br/> 以 Keras 實現 DFC CVAE，使用 CelebA 資料集.</a> <br/><br/> ( *2019-07-08* )
+   
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/vgg_filters/1_block1_conv1_output_64.png" width="350" align="right" /> | <a href="./vgg16Visualizing.html"> Visualizing what convnets of VGG16 learn. <br/><br/> 可視化 VGG16 卷積網路學習的內容.</a> <br/><br/> ( *2019-04-01* )
 
 ***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="data/Airport/flight_2.png" width="350" align="right" /> | <a href="./PilotUnionStrike.html"> Plotting cancelled/delay flight paths at pilot union strike. <br/><br/> 繪製華航罷工事件影響航班的飛行路徑.</a> <br/><br/> ( *2019-02-19* )
 
-> __PREVIOUS__
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/k5_NMS_COCO.jpg" width="350" align="right" /> | <a href="./yolov2.html"> Implement a pre-trained YOLOv2 model - object detection. <br/><br/> 實現物體偵測，利用 pre-trained YOLOv2 model.</a> <br/><br/> ( *2018-06-05* )
 
-* [Plotting cancelled/delay flight paths at pilot union strike](./PilotUnionStrike.html) ---  繪製華航罷工事件影響航班的飛行路徑.
-( *2019-02-19* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="data/ImageMasking/0320/pred_1_2.png" width="350" align="right" /> | <a href="./carvana.html"> Carvana Image Masking - Semantic Segmentation using Keras. <br/><br/> 使用 Keras 影像分割，自動去除 Carvana 影像背景.</a> <br/><br/> ( *2018-04-23* )
 
-* [Implement a pre-trained YOLOv2 model - object detection](./yolov2.html) ---  實現物體偵測，利用 pre-trained YOLOv2 model.
-( *2018-06-05* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/class_seg.png" width="350" align="right" /> | <a href="./voc2012.html"> VOC2012 - Semantic Segmentation using Keras with Tensorflow. <br/><br/> 以 FCN 實現 VOC2012 語義分割，使用Keras和Tensorflow.</a> <br/><br/> ( *2017-11-18* )
 
-* [Carvana Image Masking - Semantic Segmentation using Keras](./carvana.html) ---  使用 Keras 影像分割，自動去除 Carvana 影像背景.
-( *2018-04-23* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/koson_model_CIFAR10.png" width="350" align="right" /> | <a href="./cifar10.html"> CIFAR-10 - Object Recognition using Keras with Tensorflow. <br/><br/> CIFAR-10影像辨識，使用Keras和Tensorflow.</a> <br/><br/> ( *2017-10-12* )
 
-* [VOC2012 - Semantic Segmentation using Keras with Tensorflow](./voc2012.html) ---  以 FCN 實現 VOC2012 語義分割，使用Keras和Tensorflow.
-( *2017-11-18* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/movieReviewCNN.png" width="350" align="right" /> | <a href="./movieReviewCNN.html"> Implementation of MLP, RNN and CNN on movie reviews sentiment analysis. <br/><br/> 實作MLP、RNN及CNN於電影評論情感分析.</a> <br/><br/> ( *2017-09-26* )
 
-* [CIFAR-10 - Object Recognition using Keras with Tensorflow](./cifar10.html) --- 
-CIFAR-10影像辨識，使用Keras和Tensorflow.
-( *2017-10-12* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/m1_epoch_200.png" width="350" align="right" /> | <a href="./kerasGAN.html"> Generative adversarial networks (GAN) on the MNIST dataset. <br/><br/> 實作生成對抗網路GAN自動生成手寫數字.</a> <br/><br/> ( *2017-08-08* )
 
-* [implementation of MLP, RNN and CNN on movie reviews sentiment analysis](./movieReviewCNN.html) --- 
-實作MLP、RNN及CNN於電影評論情感分析.
-( *2017-09-26* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/mnistCNN.png" width="350" align="right" /> | <a href="./kerasCNN.html"> Convolutional neural networks (CNN) on the MNIST dataset. <br/><br/> 利用Keras實作CNN於手寫數字的辨識.</a> <br/><br/> ( *2017-06-21* )
 
-* [generative adversarial networks (GAN) on the MNIST dataset](./kerasGAN.html) --- 
-實作生成對抗網路GAN自動生成手寫數字.
-( *2017-08-08* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/digitRecognizer.png" width="350" align="right" /> | <a href="./digitRecognizer.html"> Handwritten digits recognizer with deep learning - MNIST Data. <br/><br/> 利用H2O深度學習DNN於手寫數字的辨識.</a> <br/><br/> ( *2017-06-15* )
 
-* [convolutional neural networks (CNN) on the MNIST dataset](./kerasCNN.html) --- 
-利用Keras實作CNN於手寫數字的辨識.
-( *2017-06-21* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/sentimentAnalysis.png" width="350" align="right" /> | <a href="./sentimentAnalysis.html"> Sentiment scores of movie reviews. <br/><br/> 使用 simple matching 分析電影評論情感分數.</a> <br/><br/> ( *2017-05-12* )
 
-* [handwritten digits recognizer with deep learning - MNIST Data](./digitRecognizer.html) --- 
-利用H2O深度學習DNN於手寫數字的辨識.
-( *2017-06-15* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/movieReviewSentiment.png" width="350" align="right" /> | <a href="./movieReviewSentiment.html"> Movie reviews sentiment analysis - Bag of Words Meets Bags of Popcorn. <br/><br/> 情感分析 - 電影評論正負極性.</a> <br/><br/> ( *2017-04-22* )
 
-* [sentiment scores of movie reviews](./sentimentAnalysis.html) --- 
-使用 simple matching 分析電影評論情感分數.
-( *2017-05-12* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/stspMailTopics.png" width="350" align="right" /> | <a href="./stspMailTopics.html"> Eextracting the topics with LDA. <br/><br/> 使用 LDA 擷取主題 - 以網站意見信箱為例.</a> <br/><br/> ( *2017-03-14* )
 
-* [movie reviews sentiment analysis - Bag of Words Meets Bags of Popcorn](./movieReviewSentiment.html) --- 
-情感分析 - 電影評論正負極性.
-( *2017-04-22* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/stspMailService.png" width="350" align="right" /> | <a href="./stspMailService.html"> Text classiﬁcation in opinion mining of the website. <br/><br/> 文本分類應用 - 以網站意見信箱為例.</a> <br/><br/> ( *2017-03-03* )
 
-* [extracting the topics with LDA](./stspMailTopics.html) --- 
-使用 LDA 擷取主題 - 以網站意見信箱為例.
-( *2017-03-14* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/kaoBikes_4.gif" width="350" align="right" /> | <a href="./kaoCityBike.html"> Thematic maps of Kaohsiung city public bike. <br/><br/> 利用 tmap 套件產出主題地圖 - 以高雄市公共腳踏車為例.</a> <br/><br/> ( *2017-01-25* )
 
-* [text classiﬁcation in opinion mining of the website](./stspMailService.html) --- 
-文本分類應用 - 以網站意見信箱為例.
-( *2017-03-03* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/associationRules.png" width="350" align="right" /> | <a href="./associationRules.html"> Exploring association rules with Apriori. <br/><br/> 運用 Apriori 產生關聯規則.</a> <br/><br/> ( *2017-01-18* )
 
-* [thematic maps of Kaohsiung city public bike](./kaoCityBike.html) --- 
-利用 tmap 套件產出主題地圖 - 以高雄市公共腳踏車為例.
-( *2017-01-25* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/logisticRegression.png" width="350" align="right" /> | <a href="./logisticRegression.html"> Logistic regression with Artpiece data. <br/><br/> 邏輯迴歸分析 - glm.</a> <br/><br/> ( *2017-01-13* )
 
-* [exploring association rules with Apriori](./associationRules.html) --- 
-運用 Apriori 產生關聯規則.
-( *2017-01-18* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/linearRegression.png" width="350" align="right" /> | <a href="./linearRegression.html"> Multiple linear regression analysis. <br/><br/> 多元線性迴歸分析 - 使用Cars93資料集.</a> <br/><br/> ( *2017-01-05* )
 
-* [logistic regression with Artpiece data](./logisticRegression.html) --- 
-glm 邏輯迴歸分析.
-( *2017-01-13* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/exerciseSparkR.png" width="350" align="right" /> | <a href="./exerciseSparkR.html"> Data exploration with SparkR 2.0.2. <br/><br/> 使用 SparkR 2.0.2 進行數據探索.</a> <br/><br/> ( *2016-12-15* )
 
-* [multiple linear regression analysis](./linearRegression.html) --- 
-多元線性迴歸分析.
-( *2017-01-05* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/ensembleBoosting.png" width="350" align="right" /> | <a href="./ensembleBoosting.html"> Boosting in ensembles using the caret package. <br/><br/> Ensemble modeling，以 GBM (Gradient Boosted Machine) 和 XGBoost (eXtreme Gradient Boosting) 為例.</a> <br/><br/> ( *2016-12-13* )
 
-* [data exploration with SparkR 2.0.2](./exerciseSparkR.html) --- 
-使用 SparkR 2.0.2 進行數據探索.
-( *2016-12-15* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/classifyWhiskies.png" width="350" align="right" /> | <a href="./classifyWhiskies.html"> Cross-validation and classification using the caret package. <br/><br/> 使用 caret 套件交叉驗證、分類學習，以 C5.0, Neural Networks, SVM, Naive Bayes, Random Forests and k-NN 為主.</a> <br/><br/> ( *2016-11-25* )
 
-* [boosting in ensembles using the caret package](./ensembleBoosting.html) --- 
-Ensemble modeling，以 GBM (Gradient Boosted Machine) 和 XGBoost (eXtreme Gradient Boosting) 為例.
-( *2016-12-13* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/mdsWhiskies.png" width="350" align="right" /> | <a href="./mdsWhiskies.html"> Scotch whiskies flavour mapping with MDS. <br/><br/> 利用 MDS 方法繪製 Scotch Whiskies Flavour Map. </a> <br/><br/> ( *2016-11-21* )
 
-* [cross-validation and classification using the caret package](./classifyWhiskies.html) --- 
-使用 caret 套件交叉驗證、分類學習，以 C5.0, Neural Networks, SVM, Naive Bayes, Random Forests and k-NN 為主.
-( *2016-11-25* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/pcaWhiskies.png" width="350" align="right" /> | <a href="./pcaWhiskies.html"> Scotch whiskies flavour mapping with PCA. <br/><br/> 利用 PCA 方法繪製 Scotch Whiskies Flavour Map. </a> <br/><br/> ( *2016-11-14* )
 
-* [scotch whiskies flavour mapping with MDS](./mdsWhiskies.html) --- 
-利用 MDS 方法繪製 Scotch Whiskies Flavour Map. 
-( *2016-11-21* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/kmeansWhiskies.png" width="350" align="right" /> | <a href="./kmeansWhiskies.html"> K-means cluster analysis of scotch whiskies. <br/><br/> Extract 網頁資訊、利用 K-means 分群法對 Scotch Whiskies 進行分群、以 Google Map 展現. </a> <br/><br/> ( *2016-11-08* )
 
-* [scotch whiskies flavour mapping with PCA](./pcaWhiskies.html) --- 
-利用 PCA 方法繪製 Scotch Whiskies Flavour Map. 
-( *2016-11-14* )
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/createWebsite.png" width="350" align="right" /> | <a href="./createWebsite.html"> Create a website through RStudio. <br/><br/> 利用 RStudio 進行 Git 版本控管、R Markdown 產出 HTML 網頁至 Github. </a> <br/><br/> ( *2016-11-03* )
 
-* [k-means cluster analysis of scotch whiskies](./kmeansWhiskies.html) --- 
-Extract 網頁資訊、利用 K-means 分群法對 Scotch Whiskies 進行分群、以 Google Map 展現. 
-( *2016-11-08* )
-
-* [create a website through RStudio](./createWebsite.html) --- 
-利用 RStudio 進行 Git 版本控管、R Markdown 產出 HTML 網頁至 Github. 
-( *2016-11-03* )
+***

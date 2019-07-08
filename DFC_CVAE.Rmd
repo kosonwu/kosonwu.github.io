@@ -1,0 +1,545 @@
+---
+title: ""
+date: "2019-07-08"
+output: 
+  html_document:
+    highlight: 'pygments'
+    theme: "darkly"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(keras)
+library(plyr)
+library(abind)
+library(dplyr)
+library(parallel)
+library(doParallel)
+```
+
+* ### Deep feature consistent conditional variational autoencoder (DFC CVAE) in Keras
+
+***
+
+    library(keras)
+    library(plyr)
+    library(abind)
+    library(dplyr)
+    library(parallel)
+    library(doParallel)
+    
+***
+
+從圖像的潛在空間(latent space)抽樣來生成新圖像是很受歡迎的應用，variational autoencoder (VAE) 和 generative adversarial network (GAN) 是常見的二種主要技術。這次實作以 VAE 為主，其優點是較容易訓練、可生成連續空間的圖像，缺點則是生成圖像較模糊。而 GAN 通常較不易訓練，但它生成的圖像非常realistic。原始 VAE 的loss由二個部份構成，reconstruction loss 和 Kullback-Leibler (KL) divergence loss，為了改善 VAE 生成的模糊問題，本次實作將以feature loss 來取代傳統 reconstruction loss 所使用的 binary crossentropy，也就是下圖右側虛線區塊的部份，這架構也就是所謂的 deep feature consistent (DFC)  VAE。此外，在 encoder 和 decoder 的 input 也增加 condition 輸入，也就是下圖綠色箭頭處，目的是希望新生成圖像的外觀和表情能得到進一步的操控，例如：微笑變開口笑...。
+
+以下是本次 DFC CVAE 的網路架構，原圖參考 <a href="http://krasserm.github.io/2018/07/27/dfc-vae/" target="_blank">Deep feature consistent variational auto-encoder</a>
+
+![](image/dfc_cvae.png)
+
+***
+
+* #### __CelebA資料轉換設定 __
+
+使用CelebA資料集，這是一個名人頭像的圖集，原始筆數多達20萬餘筆，40個attributes。我取其中24個attributes，篩選條件式如下，最後得到71490筆符合的資料。latent space 自訂設為 240，圖像 resize 寬高各為64，其他參數設定如下：
+
+```{r, eval=FALSE}
+
+TSB_PATH        = 'data/CelebA/logs_r'
+SAVE_PATH       = 'data/CelebA/save'
+IMG_PATH        = 'data/CelebA/img_align_celeba'
+IMAGE_H         = 64L
+IMAGE_W         = 64L
+BATCH_SIZE      = 50
+LATENT_DIM      = 240L
+CONDITION_DIM   = 24L
+
+#read attr
+attr <- read.csv("data/CelebA/list_attr_celeba.csv", as.is = T)
+nrow(attr)
+#match conditions
+attr <- filter(attr, X5_o_Clock_Shadow == -1 & Attractive == 1 & Blurry == -1 & Chubby == -1 
+               & Double_Chin == -1 & Receding_Hairline == -1 & Rosy_Cheeks == -1 
+               & Wearing_Hat == -1 & Wearing_Necktie == -1 & Young == 1)
+
+img_filenames <- file.path(IMG_PATH, attr$image_id)
+set.seed(777)
+index <- sample(length(img_filenames), 0.9 * length(img_filenames))
+#train / test
+training_filenames <- img_filenames[index]
+testing_filenames <- img_filenames[-index]
+
+remove_attr <- c('image_id', 'X5_o_Clock_Shadow', 'Attractive', 'Blurry', 'Chubby', 'Double_Chin',
+                 'Receding_Hairline', 'Rosy_Cheeks', 'Wearing_Hat', 'Wearing_Necktie', 'Young', 
+                 'Bags_Under_Eyes', 'Heavy_Makeup', 'Narrow_Eyes', 'Pointy_Nose', 'Wearing_Earrings',
+                 'Wearing_Necklace')
+attr[, remove_attr] <- NULL
+
+training_attr <- attr[index, ]
+testing_attr <- attr[-index, ]
+
+#df to matrix
+training_attr <- as.matrix(training_attr)
+testing_attr <- as.matrix(testing_attr)
+
+#do Parallel ---
+if(!exists('training_data')){
+
+  cl <- makePSOCKcluster(4)
+  registerDoParallel(cl)
+
+  clusterEvalQ(cl, {
+    library(keras)
+    library(plyr)
+    library(parallel)
+    library(doParallel)
+    library(abind)
+  })
+
+  # 讀入images
+  training_data <- foreach(i = 1:length(training_filenames)) %dopar% {
+    img <- image_load(training_filenames[i], target_size = c(IMAGE_H, IMAGE_W), interpolation = "lanczos")
+    img_arr <- image_to_array(img)
+  }
+  training_data <- do.call(abind, c(training_data, list(along = 0)))
+  attr(training_data, 'dimnames') <- NULL
+
+  testing_data <- foreach(i = 1:length(testing_filenames)) %dopar% {
+    img <- image_load(testing_filenames[i], target_size = c(IMAGE_H, IMAGE_W), interpolation = "lanczos")
+    img_arr <- image_to_array(img)
+  }
+  testing_data <- do.call(abind, c(testing_data, list(along = 0)))
+  attr(testing_data, 'dimnames') <- NULL
+
+  stopCluster(cl)
+  gc()
+}
+
+#images data
+training_data <- training_data / 255
+testing_data <- testing_data / 255
+```
+
+***
+
+* #### __訓練 Perceptual Model __
+
+Perceptual Model是一個CNN網路，目的是用來學習圖像的紋路特徵，改善原始reconstruction loss。這部份也可以使用 pre-trained 權重的CNN網路，如vgg 或 resnet等。由於 CelebA 資料集筆數夠多，這裡使用 vgg19 做為 base model 重新訓練。
+
+```{r, eval=FALSE}
+
+input_img <- layer_input(shape = c(IMAGE_H, IMAGE_W, 3))
+
+#base model
+base_model <- application_vgg19(include_top = FALSE, input_tensor = input_img, weights = NULL)
+summary(base_model)
+
+ops <- base_model$output %>%
+  layer_flatten() %>%
+  layer_dense(units = 512) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 256) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = CONDITION_DIM, activation = 'sigmoid')
+#feature model
+fm <- keras_model(inputs = base_model$input, outputs = ops)
+summary(fm)
+
+fm %>% compile(
+  optimizer = optimizer_rmsprop(lr = 0.0001),
+  loss = 'binary_crossentropy',
+  metrics = c('accuracy')
+)
+
+callbacks_list <- list(
+  callback_tensorboard(log_dir = TSB_PATH, batch_size = BATCH_SIZE),
+  callback_early_stopping(monitor = "val_loss",
+                          min_delta = 0.0001, #less than min_delta will count as no improvement.
+                          patience = 5,
+                          verbose = 1,
+                          mode = "min"),
+  callback_reduce_lr_on_plateau(monitor = "val_loss",
+                                factor = 0.1,
+                                min_delta = 0.0001,
+                                patience = 3,
+                                verbose = 1,
+                                mode = "min"),
+  callback_model_checkpoint(filepath = file.path(SAVE_PATH,'{epoch:03d}.h5'),
+                            monitor = "val_loss",
+                            save_best_only = TRUE,
+                            save_weights_only = TRUE,
+                            mode = "min" )
+)
+
+#train
+fm_result <- fm %>% fit(
+  x = training_data,
+  y = training_attr,
+  epochs = 100,
+  batch_size = BATCH_SIZE,
+  validation_data = list(testing_data, testing_attr),
+  callbacks = callbacks_list
+)
+```
+
+![](image/fm_1.png)
+
+![](image/fm_2.png)
+
+訓練完後，取feature model第2、4、6、8層的outputs做為以後生成圖像比對的依據，也就是比對輸入原始圖像和生成圖像在這些layers 的output要越接近越好。
+
+```{r, eval=FALSE}
+
+#keep conv layers only
+layers_name <- sapply(fm$layers, `[[`, "name")
+layers_name <- layers_name[grep("conv", layers_name)]
+layers_name <- layers_name[c(2,4,6,8)]
+
+layers_weight <- rep(1.0, length(layers_name))
+
+#conv layer outputs
+layers_output <- lapply(layers_name, function(name) fm$get_layer(name)$output)
+
+#activation model
+am <- keras_model(inputs = fm$input, outputs = layers_output)
+```
+
+***
+
+* #### __建立 Encoder __
+
+encoder model 有二個input，分別為輸入的 images 及對應的 attributes，目的是將其轉為 latent vector，也就是240維度的z，使用抽樣方法在隨機常態分佈下取得，這裡使用 layer_lambda 將函式打包成一個layer
+
+```{r, eval=FALSE}
+
+input_att <- layer_input(shape = c(CONDITION_DIM))
+#?, 24
+a <- input_att %>%
+  layer_dense(units = IMAGE_H * IMAGE_W) %>%
+  layer_reshape(target_shape = c(IMAGE_H, IMAGE_W, 1L))
+#?, 64, 64, 1
+
+x <- input_img %>%
+{layer_concatenate(inputs = list(a, .), axis = 3L)} %>%
+  layer_conv_2d(filters = 64, kernel_size = 3, padding = "same") %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_conv_2d(filters = 128, kernel_size = 4, padding = "same", strides = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_conv_2d(filters = 256, kernel_size = 3, padding = "same") %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_conv_2d(filters = 256, kernel_size = 4, padding = "same", strides = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu()
+#?, 16, 16, 256
+
+shape_before_flattening <- k_int_shape(x)
+#?, 16, 16, 256
+
+x <- x %>%
+  layer_flatten() %>%
+  layer_dense(units = 512) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu()
+#? 512
+
+z_mean <- x %>%
+  layer_dense(units = LATENT_DIM)
+z_log_var <- x %>%
+  layer_dense(units = LATENT_DIM)
+#? 240
+
+#latent space-sampling
+sampling <- function(args, zspace_dim) {
+  c(zm, zlv) %<-% args
+  epsilon <- k_random_normal(shape = list(k_shape(zm)[1], zspace_dim), mean = 0, stddev = 1)
+  zm + k_exp(zlv) * epsilon
+}
+
+z <- list(z_mean, z_log_var) %>%
+  layer_lambda(sampling, arguments = list(zspace_dim = LATENT_DIM))
+#? 240
+
+#encoder model
+encoder <- keras_model(list(input_img, input_att), z)
+
+summary(encoder)
+```
+
+***
+
+* #### __建立 Decoder __
+
+decoder model 也有二個input，分別為 latent vector 及對應的 attributes，串起來之後運用up sampling 將圖像吐回原本的尺寸大小，為了避免生成圖像有間隔線條，kernel_size 和 strides 取能整除的關係來設定
+
+```{r, eval=FALSE}
+
+z_dim <- k_int_shape(z)[-1][[1]]
+#240
+
+z_input <- layer_input(z_dim)
+#? 240
+
+a_input <- input_att %>%
+  layer_dense(units = IMAGE_H * IMAGE_W) %>%
+  layer_reshape(target_shape = c(16L, 16L, 16L))
+
+x <- z_input %>%
+  layer_dense(units = prod(as.integer(shape_before_flattening[-1]))) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_reshape(target_shape = shape_before_flattening[-1]) %>%
+  {layer_concatenate(list(., a_input))} %>%
+  layer_conv_2d_transpose(filters = 512, kernel_size = c(4, 4), padding = "same", strides = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_conv_2d(filters = 256, kernel_size = c(1, 1), padding = "same") %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_conv_2d_transpose(filters = 256, kernel_size = c(4, 4), padding = "same", strides = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+  layer_activation_leaky_relu() %>%
+  layer_conv_2d(filters = 3, kernel_size = 3, padding = "same", activation = "sigmoid")
+
+#decoder model
+decoder <- keras_model(list(z_input, input_att), x)
+
+summary(decoder)
+
+```
+
+***
+
+* #### __建立、訓練 DFC CVAE __
+
+最後，將encoder 和 decoder串起來就是DFC CVAE，這 model 的loss包括 KL divergence loss 和 reconstruction loss，前者是 encoder 隨機常態分佈下 mean 和 variance 的loss，後者是圖像 reconstruction 的loss，使用之前 feaature model的第2、4、6、8層的outputs做為比對的基準，設定完後就可以開始訓練 DFC CVAE
+
+```{r, eval=FALSE}
+
+z_decoded <- decoder(list(z, input_att))
+
+#VAE model
+vae <- keras_model(list(input_img, input_att), z_decoded)
+
+summary(vae)
+
+#kl_rc_loss
+kl_rc_loss <- function(y_true, y_pred) {
+
+  y_true_ls <- am(y_true)
+  y_pred_ls <- am(y_pred)
+
+  rc_loss = 0.0
+
+  for (i in seq_along(y_true_ls)) {
+    yt = k_batch_flatten(y_true_ls[[i]])
+    yp = k_batch_flatten(y_pred_ls[[i]])
+
+    rc_loss = rc_loss + layers_weight[i] * k_sum(k_square(yt - yp), axis = -1L)
+  }
+  kl_loss <- -5e-4 * k_mean(1 + z_log_var - k_square(z_mean) - k_exp(z_log_var), axis = -1L)
+
+  result <- k_mean(rc_loss + kl_loss)
+  return(result)
+}
+
+vae %>% compile(
+  optimizer = optimizer_rmsprop(lr = 0.0001),
+  loss = kl_rc_loss
+)
+
+callbacks_list <- list(
+  callback_tensorboard(log_dir = TSB_PATH, batch_size = BATCH_SIZE),
+  callback_early_stopping(monitor = "val_loss",
+                          min_delta = 0.0001, #less than min_delta will count as no improvement.
+                          patience = 5,
+                          verbose = 1,
+                          mode = "min"),
+  callback_reduce_lr_on_plateau(monitor = "val_loss",
+                                factor = 0.1,
+                                min_delta = 0.0001,
+                                patience = 3,
+                                verbose = 1,
+                                mode = "min"),
+  callback_model_checkpoint(filepath = file.path(SAVE_PATH,'{epoch:03d}.h5'),
+                            monitor = "val_loss",
+                            save_best_only = TRUE,
+                            save_weights_only = TRUE,
+                            mode = "min" )
+)
+
+#train
+vae_result <- vae %>% fit(
+  x = list(training_data, training_attr),
+  y = training_data,
+  epochs = 100,
+  batch_size = BATCH_SIZE,
+  validation_data = list(list(testing_data, testing_attr), testing_data),
+  callbacks = callbacks_list
+)
+```
+
+以下是訓練後結果
+
+![](image/dfc_cvae_1.png)
+
+![](image/dfc_cvae_2.png)
+
+***
+
+* #### __Prediction __
+
+由測試資料中隨選30筆進行預測，左是real、右是prediction
+
+```{r, eval=FALSE}
+
+#plot real & predict
+kk <- sample(1:nrow(testing_data), 30)
+op <- par(mfrow = c(6, 5*2), mai = rep_len(0.02, 4), bg = 'black')
+
+for (k in kk) {
+  #real
+  plot(as.raster(testing_data[k, , , ]))
+  #predict
+  k_attr <- testing_attr[k, , drop = F]
+  decoded_z <-
+    vae %>% predict(list(testing_data[k, , , , drop = F], k_attr))
+  plot(as.raster(decoded_z[1, , , ]))
+}
+par(op)
+```
+
+![](image/dfc_cvae_predict.png)
+
+***
+
+VAE可由latent space生成連續結構良好的圖像，透過以下插值方式，將測試資料中的2圖插值生成10個連續圖樣
+
+```{r, eval=FALSE}
+
+#插值
+interpretation <- function(v1 , v2, num){
+  
+  itp_mtx <- matrix(0, nrow = num, ncol = length(v1))
+  
+  if(length(v1) != length(v2))
+    print('error, v1 and v2 length must be the same')
+  else{
+    #initial matrix
+    for(i in seq_along(v1))
+      itp_mtx[,i] = seq(v1[i], v2[i], length.out = num)
+  }
+    
+  itp_mtx
+}
+
+#2圖之間插值轉換
+transform.2img <- function(k1 = 571, k2 = 2920, interval_num = 10) {
+  k1_attr <- testing_attr[k1,,drop=F]
+  k2_attr <- testing_attr[k2,,drop=F]
+  
+  itp_attr <- interpretation(k1_attr, k2_attr, interval_num)
+  
+  k1_z <- encoder %>% predict(list(testing_data[k1,,,,drop=F], k1_attr))
+  k2_z <- encoder %>% predict(list(testing_data[k2,,,,drop=F], k2_attr))
+  
+  itp_z <- interpretation(k1_z, k2_z, interval_num)
+
+  op <- par(mfrow = c(1, interval_num),  mai = rep_len(0.02, 4), bg = 'black')
+  
+  for(i in 1:interval_num){
+    z_decoded <- decoder %>% predict(list(itp_z[i,,drop=F], itp_attr[i,,drop=F]))
+    plot(as.raster(z_decoded[1,,,]))
+  }
+
+  par(op)
+}
+
+#隨選2圖插值
+kk <- sample(1:nrow(testing_data), 2)
+transform.2img(kk[1], kk[2])
+
+```
+
+![](image/dfc_cvae_predict2.png)
+
+以下預測4圖，再交叉插值生成連續圖樣...
+
+![](image/dfc_cvae_predict3.png)
+
+***
+
+* #### __修改Attributes __
+
+CVAE在encoder 和 decoder 都有 attributes 的 input，以下就來修改一下 attributes，看是否能夠調整圖像的表情外觀，原始attributes值以1和-1表示是否。以下從測試資料中隨選1筆 Mouth_Slightly_Open 和 Smiling 屬性為1者，接著遞減屬性值(由1至-7)觀察生成圖像的表情變化，由下圖看起來屬性由1轉-1並無明顯變化，當屬性值降至-4或-5時，表情已經由原本的開口笑容轉成閉口了，看來單獨修改 attributes (z 未調整) 有影響生成的圖像
+
+![](image/dfc_cvae_predict4.png)
+
+反過來，再測試1筆Mouth_Slightly_Open 和 Smiling 屬性為-1者，遞增屬性值(由-1至7)，當屬性值升至4或5時，表情已經由原本的閉口轉變成開口笑容了...
+
+![](image/dfc_cvae_predict5.png)
+
+***
+
+* #### __開口笑轉成閉口 __
+
+經上述觀察，接下來將目標 attributes 為1的值，依序遞減為1、-1、-3、-5，若目標 attributes 為-1，遞增順序為-1、1、3、5。以下是遞減 Mouth_Slightly_Open 和 Smiling  屬性值的預測，隨選16筆測試資料，最左為原始圖、然後遞減目標屬性值為1、-1、-3、-5的預測圖
+
+![](image/dfc_cvae_predict6.png)
+
+***
+
+* #### __閉口轉成開口笑 __
+
+![](image/dfc_cvae_predict7.png)
+
+***
+
+* #### __去除眼鏡 __
+
+修改 Eyeglasses 屬性值。從下圖可見，一般眼鏡比較容易消除，墨鏡(尤其大鏡面)消除的效果不理想，變成黑眼圈
+
+![](image/dfc_cvae_predict8.png)
+
+***
+
+* #### __男性變女性 __
+
+這部份幾乎看不到效果，或許不是單純修改 Male 一個屬性值就能達成...
+
+![](image/dfc_cvae_predict9.png)
+
+***
+
+* #### __去除鬍子 __
+
+同時修改 Mustache、No_Beard、Sideburns 與 Goatee 屬性值，大致有產生效果，但也隨著屬性值調整過大(例如:5 或 -5)，預測圖品質會變差 
+
+![](image/dfc_cvae_predict10.png)
+
+***
+
+* #### __金髮變黑髮 __
+
+修改 Blond_Hair 和 Black_Hair 屬性值，這部份看起沒什麼效果...
+
+![](image/dfc_cvae_predict11.png)
+
+***
+
+* #### __Summary __
+
+透過這次實作DFC CVAE，預期到一些效果和限制，VAE訓練起來較穩、可生成連續結構圖樣，但生成的圖較模糊，雖然加入deep feature consistent 改善原本 VAE 生成效果，但髮型和其他小細節的效果還是無法和 GAN 相比擬。此外，本次加入了 condition 條件，透過屬性調整的確可以產生效果，例如嘴巴張合、去除眼鏡或鬍子，但有些還是不盡理想，或許這部份可以試試其他技術(ex：cycleGAN 和 starGAN) 
+
+***
+
+* ### Lessons Learned:
+    + #### Auto-encoder
+    + #### Variational auto-encoder
+    + #### Deep feature consistent 
+    
