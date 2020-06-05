@@ -13,6 +13,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ***
 <br/> | <br/>
 ----------------------------------------------------- | -------------------------------------------------------------------------
+<img src="image/AdaINStyleTransfer.jpg" width="350" align="right" /> | <a href="./ArbitraryStyleTransfer.html"> Arbitrary Style Transfer in Real-time with AdaIN. <br/><br/> 以 Keras 實現 任意風格移轉 in Real-time.</a> <br/><br/> ( *2020-06-05* )
+
+***
+<br/> | <br/>
+----------------------------------------------------- | -------------------------------------------------------------------------
 <img src="image/dfc_cvae_predict.png" width="350" align="right" /> | <a href="./DFC_CVAE.html"> Deep feature consistent conditional variational autoencoder (DFC CVAE) in Keras. <br/><br/> 以 Keras 實現 DFC CVAE，使用 CelebA 資料集.</a> <br/><br/> ( *2019-07-08* )
    
 ***
